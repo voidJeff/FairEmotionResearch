@@ -20,12 +20,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser('Prep csv file for fairface prediction')
     parser.add_argument('--image_dirs', 
                         type=str, 
-                        nargs = +, 
+                        nargs = "+", 
                         required=True,
                         help='directories whose images to make fairface csvs for')
     parser.add_argument('--target_csv_files', 
                         type=str, 
-                        nargs = +, 
+                        nargs = "+", 
                         required=True,
                         help='Filename for fairface csvs for')
         
