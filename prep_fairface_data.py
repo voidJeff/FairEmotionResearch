@@ -29,7 +29,7 @@ if __name__ == "__main__":
                         required=True,
                         help='Filename for fairface csvs for')
         
-    main_args = args.parse_args()
+    main_args = parser.parse_args()
 
     if len(main_args.image_dirs) != len(main_args.target_csv_files):
         raise Exception("Num image dirs must match num target csv files")
