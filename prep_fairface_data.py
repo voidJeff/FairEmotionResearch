@@ -14,7 +14,7 @@ def main(args):
 
             images = glob.glob(os.path.join(dir, "*.jpg"))
             for image in images:
-                writer.writerow({'img_path': image})
+                writer.writerow({'img_path': "../" + image})
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('Prep csv file for fairface prediction')
