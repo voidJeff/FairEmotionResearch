@@ -13,8 +13,10 @@ tar -xvf ../val_set.tar
 # get the fairface csvs ready
 python prep_fairface_data.py --image_dirs train_set/images val_set/images --target_csv_files train_fairface.csv val_fairface.csv
 
+fairface_file_name="./FairFace.tar"
+
 # check fairface exists
-if [ ! -d "./FairFace.tar" ]
+if [ ! -f "$fairface_file_name" ]
 then
     echo "Unable to find FairFace tar file; download from the FairFace Github and modify w/ appropriate models"
     exit
@@ -22,3 +24,6 @@ fi
 
 tar -xvf ./FairFace.tar
 
+cd FairFace
+
+python ./predict.py --csv ../val_fairface.csv
