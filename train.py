@@ -115,7 +115,7 @@ def main(args):
                 if(args.model_type == "baseline"):
                     score = model(x)
                 else:
-                    raise Exception("Model Type Invalid")
+                    raise Exception("Model Type is Invalid")
 
                 # calc loss
                 y = y.float().to(device)
