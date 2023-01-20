@@ -4,6 +4,7 @@ Utility classes and methods for long covid classification
 
 
 from copy import deepcopy
+import glob
 import logging
 import os
 import queue
@@ -32,7 +33,25 @@ class AffectNetDataset(data.Dataset):
         balance = True
     ):
 
-    # make a two col pandas df of image number : label
+        # make a two col pandas df of image number : label
+        annotations = glob.glob(os.path.join(data_annotation_dir, "*_exp.npy"))
+
+        image_nums = []
+        labels = []
+        for annotation in annotations:
+            image_num = re.findall(r'(\d+)', str(annotation))[0]
+            label = np.load(annotation).item()
+
+            image_nums.append(image_num)
+            labels.append(label)
+        
+        data = pd.DataFrame({image_num: image_nums, })
+
+
+
+    # filename = train_set/1001.jpg
+
+    # ex. 1000 happy, 200 sad, 500 angry
 
     def __getitem__(self, index):
 
