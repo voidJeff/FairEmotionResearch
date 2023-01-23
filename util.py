@@ -8,6 +8,7 @@ import glob
 import logging
 import os
 import queue
+from PIL import image
 import re
 import shutil
 import string
@@ -29,12 +30,15 @@ class AffectNetDataset(data.Dataset):
     """
     def __init__(
         self,
-        data_annotation_dir,
-        balance = True
+        data_dir,
+        train,
+        balance = None
     ):
 
         # make a two col pandas df of image number : label
-        annotations = glob.glob(os.path.join(data_annotation_dir, "*_exp.npy"))
+        self.data_dir = data_dir
+        self.train = train
+        annotations = glob.glob(os.path.join(data_dir, "annotations", "*_exp.npy"))
 
         image_nums = []
         labels = []
@@ -45,9 +49,12 @@ class AffectNetDataset(data.Dataset):
             image_nums.append(image_num)
             labels.append(label)
         
-        data = pd.DataFrame({image_num: image_nums, })
+        self.data = pd.DataFrame({"image_num": image_nums, "label": labels})
 
-
+        if balance:
+            # downsample here
+            g = data.groupby(label, group_keys=False)
+            self.data = pd.DataFrame(g.apply(lambda x: x.sample(g.size().min()))).reset_index(drop=True)
 
     # filename = train_set/1001.jpg
 
@@ -56,26 +63,46 @@ class AffectNetDataset(data.Dataset):
     def __getitem__(self, index):
 
         # use the df to read in image for the given index
+        image_path = os.path.join(self.data_dir, "images", self.data.loc[i, "image_num"], ".jpg")
 
-        # do some data aug/transform
-#         data_transforms = {
-#     'train': transforms.Compose([
-#         transforms.RandomResizedCrop(input_size),
-#         transforms.RandomHorizontalFlip(),
-#         transforms.ToTensor(),
-#         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-#     ]),
-#     'val': transforms.Compose([
-#         transforms.Resize(input_size),
-#         transforms.CenterCrop(input_size),
-#         transforms.ToTensor(),
-#         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-#     ]),
-# }
+        image = Image.open(image_path).convert("RGB")
+
+        if self.train:
+            std_image = transforms.Compose(
+            [
+                transforms.ColorJitter(brightness=0.5, hue = 0.3)
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=(0.485, 0.456, 0.406), 
+                    std=(0.229, 0.224, 0.225)
+                )
+            ]
+        )
+        else:
+            std_image = transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Normalize(                    
+                    mean=(0.485, 0.456, 0.406), 
+                    std=(0.229, 0.224, 0.225)
+                    )
+                ]
+            )
+        image = std_image(image)
+        assert(image.shape == [3, 224, 224])
+
+        label = self.data.loc[index, "label"]
+
+        example = (
+            img_id,
+            image,
+            label
+        )
 
     def __len__(self):
 
-        return len(self._data)
+        return len(self.data)
 
 
 class AverageMeter:
