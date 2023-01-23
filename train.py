@@ -47,7 +47,7 @@ def main(args):
     # Get Model
     log.info("Making model....")
     if(args.model_type == "baseline"):
-        model = baseline_pretrain(7)
+        model = baseline_pretrain(8)
     else:
         raise Exception("Model provided not valid")
 
