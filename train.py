@@ -15,13 +15,12 @@ import util
 
 from args import get_train_args
 from models import baseline_ff
-from util import LongCovidDataset
+from util import AffectNetDataset
 from collections import OrderedDict
 from sklearn import metrics
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from json import dumps
-from sklearn.utils.class_weight import compute_class_weight
 import os
 import sys
 
@@ -83,12 +82,12 @@ def main(args):
     # load in data
     log.info("Building dataset....")
     if(args.model_type == "baseline"):
-        train_dataset = LongCovidDataset(args.train_explicit_eval_file)
+        train_dataset = AffectNetDataset(args.train_explicit_eval_file)
         train_loader = data.DataLoader(train_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.num_workers)
-        dev_dataset = LongCovidDataset(args.val_explicit_eval_file)
+        dev_dataset = AffectNetDataset(args.val_explicit_eval_file)
         dev_loader = data.DataLoader(dev_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=False,
@@ -120,9 +119,8 @@ def main(args):
                 # calc loss
                 y = y.float().to(device)
 
-                # weight the BCE
-                weights = compute_class_weight(class_weight='balanced', classes= np.unique(y.cpu()), y= y.cpu().numpy())
-                weights=torch.tensor(weights,dtype=torch.float).to(device)
+                # weights = compute_class_weight(class_weight='balanced', classes= np.unique(y.cpu()), y= y.cpu().numpy())
+                weights = torch.tensor(train_dataset.label_weights,dtype=torch.float).to(device)
                 # criterion = nn.BCEWithLogitsLoss(reduction= 'none')
                 criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'mean')
 

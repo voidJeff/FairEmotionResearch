@@ -31,7 +31,6 @@ class baseline_pretrain(nn.Module):
         out = self.relu1(out)      
         out = self.relu2(self.fc2(out))  
         out = self.dropout(out)
-        
         out = self.fc3(out)
 
         return out

@@ -4,9 +4,11 @@ Utility classes and methods for long covid classification
 
 
 from copy import deepcopy
+import glob
 import logging
 import os
 import queue
+from PIL import Image
 import re
 import shutil
 import string
@@ -21,6 +23,8 @@ import matplotlib.pyplot as plt
 from joblib import dump, load
 
 from collections import Counter
+from sklearn.utils.class_weight import compute_class_weight
+
 
 class AffectNetDataset(data.Dataset):
     """
@@ -28,40 +32,83 @@ class AffectNetDataset(data.Dataset):
     """
     def __init__(
         self,
-        data_annotation_dir,
-        balance = True
+        data_dir,
+        train,
+        balance = None
     ):
 
-    # make a two col pandas df of image number : label
+        # make a two col pandas df of image number : label
+        self.data_dir = data_dir
+        self.train = train
+        annotations = glob.glob(os.path.join(data_dir, "annotations", "*_exp.npy"))
+
+        image_nums = []
+        labels = []
+        for annotation in annotations:
+            image_num = re.findall(r'(\d+)', str(annotation))[0]
+            label = np.load(annotation).item()
+
+            image_nums.append(image_num)
+            labels.append(label)
+        
+        self.data = pd.DataFrame({"image_num": image_nums, "label": labels})
+
+        if balance: # !ignore for now, not downsampling
+            # downsample here
+            g = data.groupby(label, group_keys=False)
+            self.data = pd.DataFrame(g.apply(lambda x: x.sample(g.size().min()))).reset_index(drop=True)
+
+        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(labels.cpu()), y= labels.cpu().numpy()) #? should we drop the .cpu() here?
+    # filename = train_set/1001.jpg
+
+    # ex. 1000 happy, 200 sad, 500 angry
 
     def __getitem__(self, index):
 
         # use the df to read in image for the given index
+        image_path = os.path.join(self.data_dir, "images", self.data.loc[index, "image_num"] + ".jpg")
 
-        # do some data aug/transform
-#         data_transforms = {
-#     'train': transforms.Compose([
-#         transforms.RandomResizedCrop(input_size),
-#         transforms.RandomHorizontalFlip(),
-#         transforms.ToTensor(),
-#         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-#     ]),
-#     'val': transforms.Compose([
-#         transforms.Resize(input_size),
-#         transforms.CenterCrop(input_size),
-#         transforms.ToTensor(),
-#         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-#     ]),
-# }
+        image = Image.open(image_path).convert("RGB")
+
+        if self.train:
+            std_image = transforms.Compose(
+            [
+                transforms.ColorJitter(brightness=0.5, hue = 0.3),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=(0.485, 0.456, 0.406), 
+                    std=(0.229, 0.224, 0.225)
+                )
+            ]
+        )
+        else:
+            std_image = transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Normalize(                    
+                    mean=(0.485, 0.456, 0.406), 
+                    std=(0.229, 0.224, 0.225)
+                    )
+                ]
+            )
+        image = std_image(image)
+        assert(image.shape == (3, 224, 224))
+
+        label = self.data.loc[index, "label"]
+
+        example = (
+            image,
+            label
+        )
 
     def __len__(self):
 
-        return len(self._data)
+        return len(self.data)
 
 
 class AverageMeter:
     """Keep track of average values over time.
-
     Adapted from:
         > https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
@@ -76,7 +123,6 @@ class AverageMeter:
 
     def update(self, val, num_samples=1):
         """Update meter with new value `val`, the average of `num` samples.
-
         Args:
             val (float): Average value to update the meter with.
             num_samples (int): Number of samples that were averaged to
@@ -88,11 +134,9 @@ class AverageMeter:
 
 class CheckpointSaver:
     """Class to save and load model checkpoints.
-
     Save the best checkpoints as measured by a metric value passed into the
     `save` method. Overwrite checkpoints with better checkpoints once
     `max_checkpoints` have been saved.
-
     Args:
         save_dir (str): Directory to save checkpoints.
         max_checkpoints (int): Maximum number of checkpoints to keep before
@@ -118,7 +162,6 @@ class CheckpointSaver:
 
     def is_best(self, metric_val):
         """Check whether `metric_val` is the best seen so far.
-
         Args:
             metric_val (float): Metric value to compare to prior checkpoints.
         """
@@ -140,7 +183,6 @@ class CheckpointSaver:
 
     def save(self, step, model, metric_val, device):
         """Save model parameters to disk.
-
         Args:
             step (int): Total number of examples seen during training so far.
             model (torch.nn.DataParallel): Model to save.
@@ -244,13 +286,11 @@ def make_update_dict(img_ids, preds, scores, labels):
 def get_save_dir(base_dir, name, training, id_max=100):
     """Get a unique save directory by appending the smallest positive integer
     `id < id_max` that is not already taken (i.e., no dir exists with that id).
-
     Args:
         base_dir (str): Base directory in which to make save directories.
         name (str): Name to identify this training run. Need not be unique.
         training (bool): Save dir. is for training (determines subdirectory).
         id_max (int): Maximum ID number before raising an exception.
-
     Returns:
         save_dir (str): Path to a new directory with a unique name.
     """
@@ -266,7 +306,6 @@ def get_save_dir(base_dir, name, training, id_max=100):
 
 def get_available_devices():
     """Get IDs of all available GPUs.
-
     Returns:
         device (torch.device): Main device (GPU 0 or CPU).
         gpu_ids (list): List of IDs of all GPUs that are available.
@@ -284,13 +323,11 @@ def get_available_devices():
 
 def load_model(model, checkpoint_path, gpu_ids, return_step=True):
     """Load model parameters from disk.
-
     Args:
         model (torch.nn.DataParallel): Load parameters into this model.
         checkpoint_path (str): Path to checkpoint to load.
         gpu_ids (list): GPU IDs for DataParallel.
         return_step (bool): Also return the step at which checkpoint was saved.
-
     Returns:
         model (torch.nn.DataParallel): Model loaded from checkpoint.
         step (int): Step at which checkpoint was saved. Only if `return_step`.
@@ -310,17 +347,14 @@ def load_model(model, checkpoint_path, gpu_ids, return_step=True):
 def get_logger(log_dir, name):
     """Get a `logging.Logger` instance that prints to the console
     and an auxiliary file.
-
     Args:
         log_dir (str): Directory in which to create the log file.
         name (str): Name to identify the logs.
-
     Returns:
         logger (logging.Logger): Logger instance for logging events.
     """
     class StreamHandlerWithTQDM(logging.Handler):
         """Let `logging` print without breaking `tqdm` progress bars.
-
         See Also:
             > https://stackoverflow.com/questions/38543506
         """
