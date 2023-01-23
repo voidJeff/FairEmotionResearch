@@ -8,7 +8,7 @@ import glob
 import logging
 import os
 import queue
-from PIL import image
+from PIL import Image
 import re
 import shutil
 import string
@@ -63,14 +63,14 @@ class AffectNetDataset(data.Dataset):
     def __getitem__(self, index):
 
         # use the df to read in image for the given index
-        image_path = os.path.join(self.data_dir, "images", self.data.loc[i, "image_num"], ".jpg")
+        image_path = os.path.join(self.data_dir, "images", self.data.loc[index, "image_num"] + ".jpg")
 
         image = Image.open(image_path).convert("RGB")
 
         if self.train:
             std_image = transforms.Compose(
             [
-                transforms.ColorJitter(brightness=0.5, hue = 0.3)
+                transforms.ColorJitter(brightness=0.5, hue = 0.3),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 transforms.Normalize(
@@ -90,12 +90,11 @@ class AffectNetDataset(data.Dataset):
                 ]
             )
         image = std_image(image)
-        assert(image.shape == [3, 224, 224])
+        assert(image.shape == (3, 224, 224))
 
         label = self.data.loc[index, "label"]
 
         example = (
-            img_id,
             image,
             label
         )

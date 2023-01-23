@@ -14,8 +14,8 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import util
 
 from args import get_train_args
-from models import baseline_ff
-from util import LongCovidDataset
+from models import baseline_pretrain
+from util import AffectNetDataset
 from collections import OrderedDict
 from sklearn import metrics
 from tensorboardX import SummaryWriter
@@ -47,7 +47,7 @@ def main(args):
     # Get Model
     log.info("Making model....")
     if(args.model_type == "baseline"):
-        model = baseline_ff(hidden_size=args.hidden_size, drop_prob = args.drop_prob)
+        model = baseline_pretrain(7)
     else:
         raise Exception("Model provided not valid")
 
