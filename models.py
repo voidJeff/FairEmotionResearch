@@ -22,10 +22,9 @@ class baseline_pretrain(nn.Module):
         super(baseline_pretrain, self).__init__()
         self.model_ft= resnet50(pretrained = ResNet50_Weights)
         num_ftrs = self.model_ft.fc.in_features
-        self.fc = nn.Linear(num_ftrs, num_classes)
+        self.model_ft.fc = nn.Linear(num_ftrs, num_classes)
 
     def forward(self, x):
         # forward through linear layers
         out = self.model_ft(x)
-        out = self.fc(out)
         return out
