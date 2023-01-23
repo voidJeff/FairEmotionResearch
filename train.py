@@ -14,7 +14,7 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import util
 
 from args import get_train_args
-from models import baseline_ff
+from models import baseline_pretrain
 from util import LongCovidDataset
 from collections import OrderedDict
 from sklearn import metrics
@@ -47,7 +47,8 @@ def main(args):
     # Get Model
     log.info("Making model....")
     if(args.model_type == "baseline"):
-        model = baseline_ff(hidden_size=args.hidden_size, drop_prob = args.drop_prob)
+        # model = baseline_ff(hidden_size=args.hidden_size, drop_prob = args.drop_prob)
+        model = baseline_pretrain(in_features = 224*224)
     else:
         raise Exception("Model provided not valid")
 
@@ -58,7 +59,7 @@ def main(args):
         log.info(f'Loading checkpoint from {args.load_path}...')
         model, step = util.load_model(model, args.load_path, args.gpu_ids)
     else:
-        step = 0    
+        step = 0
 
     # send model to dev and start training
     model = model.to(device)
@@ -76,7 +77,7 @@ def main(args):
                             betas = (0.9, 0.999),
                             eps = 1e-7,
                             weight_decay = args.l2_wd)
-    
+
 
     scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
 
@@ -156,13 +157,13 @@ def main(args):
                     # Eval and save checkpoint
                     log.info(f'Evaluating at step {step}...')
                     ema.assign(model)
-                    results, pred_dict = evaluate(args, 
-                                                  model, 
-                                                  dev_loader, 
+                    results, pred_dict = evaluate(args,
+                                                  model,
+                                                  dev_loader,
                                                   device)
                     saver.save(step, model, results[args.metric_name], device)
                     ema.resume(model)
-                    
+
                     results_str = ", ".join(f'{k}: {v:05.2f}' for k, v in results.items())
                     log.info(f'Dev {results_str}')
 
@@ -170,7 +171,7 @@ def main(args):
                     log.info("Visualizing in TensorBoard")
                     for k, v in results.items():
                         tbx.add_scalar(f'dev/{k}', v, step)
-                    
+
 def evaluate(args, model, data_loader, device):
     nll_meter = util.AverageMeter()
 
@@ -182,7 +183,7 @@ def evaluate(args, model, data_loader, device):
 
     acc = 0
     num_corrects, num_samples = 0, 0
-    
+
     with torch.no_grad(), \
         tqdm(total=len(data_loader.dataset)) as progress_bar:
         for x, y in data_loader:
@@ -202,7 +203,7 @@ def evaluate(args, model, data_loader, device):
             weights = compute_class_weight(class_weight='balanced', classes = np.unique(y.cpu()), y = y.cpu().numpy())
             weights=torch.tensor(weights,dtype=torch.float).to(device)
             criterion = nn.BCEWithLogitsLoss(reduction = 'none')
-            
+
             preds, num_correct, acc = util.binary_acc(score, y.unsqueeze(1))
             loss = criterion(score, y.unsqueeze(1))
             for i in range(len(loss)):
@@ -210,7 +211,7 @@ def evaluate(args, model, data_loader, device):
                     loss[i] *= weights[0]
                 else:
                     loss[i] *= weights[1]
-            
+
             loss_val = torch.mean(loss)
             nll_meter.update(loss_val.item(), batch_size)
 
@@ -233,14 +234,14 @@ def evaluate(args, model, data_loader, device):
     model.train()
 
     results_list = [("NLL", nll_meter.avg),
-                    ("Acc", acc), 
+                    ("Acc", acc),
                     ("AUROC", auc)]
     results = OrderedDict(results_list)
-    
+
     return results, pred_dict
 
 
 
-    
+
 if __name__ == '__main__':
     main(get_train_args())
