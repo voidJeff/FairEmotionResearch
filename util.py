@@ -52,6 +52,7 @@ class AffectNetDataset(data.Dataset):
             labels.append(label)
         
         self.data = pd.DataFrame({"image_num": image_nums, "label": labels})
+        self.data.labels = self.data.labels.astype(int)
 
         if balance: # !ignore for now, not downsampling
             # downsample here
@@ -101,6 +102,7 @@ class AffectNetDataset(data.Dataset):
             image,
             label
         )
+        return example
 
     def __len__(self):
 

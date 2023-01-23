@@ -1,5 +1,5 @@
 """
-Train a model on the Long Covid Dataset
+Train a model on the AffectNet Dataset
 """
 
 import numpy as np
@@ -14,13 +14,14 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import util
 
 from args import get_train_args
-from models import baseline_ff
+from models import baseline_pretrain
 from util import AffectNetDataset
 from collections import OrderedDict
 from sklearn import metrics
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from json import dumps
+from sklearn.utils.class_weight import compute_class_weight
 import os
 import sys
 
@@ -46,7 +47,8 @@ def main(args):
     # Get Model
     log.info("Making model....")
     if(args.model_type == "baseline"):
-        model = baseline_ff(hidden_size=args.hidden_size, drop_prob = args.drop_prob)
+        # model = baseline_ff(hidden_size=args.hidden_size, drop_prob = args.drop_prob)
+        model = baseline_pretrain(8)
     else:
         raise Exception("Model provided not valid")
 
@@ -57,7 +59,7 @@ def main(args):
         log.info(f'Loading checkpoint from {args.load_path}...')
         model, step = util.load_model(model, args.load_path, args.gpu_ids)
     else:
-        step = 0    
+        step = 0
 
     # send model to dev and start training
     model = model.to(device)
@@ -75,19 +77,19 @@ def main(args):
                             betas = (0.9, 0.999),
                             eps = 1e-7,
                             weight_decay = args.l2_wd)
-    
+
 
     scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
 
     # load in data
     log.info("Building dataset....")
     if(args.model_type == "baseline"):
-        train_dataset = AffectNetDataset(args.train_explicit_eval_file)
+        train_dataset = AffectNetDataset(args.train_dir, train = True, balance = False)
         train_loader = data.DataLoader(train_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.num_workers)
-        dev_dataset = AffectNetDataset(args.val_explicit_eval_file)
+        dev_dataset = AffectNetDataset(args.val_dir, train = False, balance = False)
         dev_loader = data.DataLoader(dev_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=False,
@@ -97,7 +99,7 @@ def main(args):
     # Start training
     log.info("Training...")
     steps_till_eval = args.eval_steps
-    epoch = step // int(len(train_dataset) * (0.8))
+    epoch = step // len(train_dataset)
 
     while epoch != args.num_epochs:
         epoch += 1
@@ -119,13 +121,14 @@ def main(args):
                 # calc loss
                 y = y.float().to(device)
 
+                # weight the BCE
                 # weights = compute_class_weight(class_weight='balanced', classes= np.unique(y.cpu()), y= y.cpu().numpy())
                 weights = torch.tensor(train_dataset.label_weights,dtype=torch.float).to(device)
                 # criterion = nn.BCEWithLogitsLoss(reduction= 'none')
                 criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'mean')
 
                 loss = criterion(score, y) # do not need unsqueeze for CCELoss I think?
-                
+
                 # for i in range(len(loss)):
                 #     if y[i] == 0:
                 #         loss[i] *= weights[0]
@@ -156,13 +159,13 @@ def main(args):
                     # Eval and save checkpoint
                     log.info(f'Evaluating at step {step}...')
                     ema.assign(model)
-                    results, pred_dict = evaluate(args, 
-                                                  model, 
-                                                  dev_loader, 
+                    results, pred_dict = evaluate(args,
+                                                  model,
+                                                  dev_loader,
                                                   device)
                     saver.save(step, model, results[args.metric_name], device)
                     ema.resume(model)
-                    
+
                     results_str = ", ".join(f'{k}: {v:05.2f}' for k, v in results.items())
                     log.info(f'Dev {results_str}')
 
@@ -170,7 +173,7 @@ def main(args):
                     log.info("Visualizing in TensorBoard")
                     for k, v in results.items():
                         tbx.add_scalar(f'dev/{k}', v, step)
-                    
+
 def evaluate(args, model, data_loader, device):
     nll_meter = util.AverageMeter()
 
@@ -182,7 +185,7 @@ def evaluate(args, model, data_loader, device):
 
     acc = 0
     num_corrects, num_samples = 0, 0
-    
+
     with torch.no_grad(), \
         tqdm(total=len(data_loader.dataset)) as progress_bar:
         for x, y in data_loader:
@@ -202,7 +205,7 @@ def evaluate(args, model, data_loader, device):
             weights = compute_class_weight(class_weight='balanced', classes = np.unique(y.cpu()), y = y.cpu().numpy())
             weights=torch.tensor(weights,dtype=torch.float).to(device)
             criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'none')
-            
+
             preds, num_correct, acc = util.binary_acc(score, y.unsqueeze(1)) #? should we unsqueeze
             loss = criterion(score, y.unsqueeze(1))
             # for i in range(len(loss)):
@@ -210,7 +213,7 @@ def evaluate(args, model, data_loader, device):
             #         loss[i] *= weights[0]
             #     else:
             #?         loss[i] *= weights[1] seems like this is for binary classification, maybe we can use built in reduction
-            
+
             loss_val = torch.mean(loss) # ? same here
             nll_meter.update(loss_val.item(), batch_size)
 
@@ -233,14 +236,14 @@ def evaluate(args, model, data_loader, device):
     model.train()
 
     results_list = [("NLL", nll_meter.avg),
-                    ("Acc", acc), 
+                    ("Acc", acc),
                     ("AUROC", auc)]
     results = OrderedDict(results_list)
-    
+
     return results, pred_dict
 
 
 
-    
+
 if __name__ == '__main__':
     main(get_train_args())
