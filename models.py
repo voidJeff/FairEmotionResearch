@@ -10,9 +10,7 @@ from torchvision.models import resnet50, ResNet50_Weights
 class baseline_pretrain(nn.Module):
     """
     Baseline model for facial expression prediction
-
     Finetunes a layer on top of resnet pretrain
-
     Args:
         hidden_size,
         drop_prob

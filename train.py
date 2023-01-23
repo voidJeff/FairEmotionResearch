@@ -1,5 +1,5 @@
 """
-Train a model on the Long Covid Dataset
+Train a model on the AffectNet Dataset
 """
 
 import numpy as np
@@ -122,8 +122,8 @@ def main(args):
                 y = y.float().to(device)
 
                 # weight the BCE
-                weights = compute_class_weight(class_weight='balanced', classes= np.unique(y.cpu()), y= y.cpu().numpy())
-                weights=torch.tensor(weights,dtype=torch.float).to(device)
+                # weights = compute_class_weight(class_weight='balanced', classes= np.unique(y.cpu()), y= y.cpu().numpy())
+                weights = torch.tensor(train_dataset.label_weights,dtype=torch.float).to(device)
                 # criterion = nn.BCEWithLogitsLoss(reduction= 'none')
                 criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'mean')
 
