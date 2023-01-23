@@ -15,7 +15,7 @@ import util
 
 from args import get_train_args
 from models import baseline_pretrain
-from util import LongCovidDataset
+from util import AffectNetDataset
 from collections import OrderedDict
 from sklearn import metrics
 from tensorboardX import SummaryWriter
@@ -84,12 +84,12 @@ def main(args):
     # load in data
     log.info("Building dataset....")
     if(args.model_type == "baseline"):
-        train_dataset = LongCovidDataset(args.train_explicit_eval_file)
+        train_dataset = AffectNetDataset(args.train_dir, train = True, balance = False)
         train_loader = data.DataLoader(train_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.num_workers)
-        dev_dataset = LongCovidDataset(args.val_explicit_eval_file)
+        dev_dataset = AffectNetDataset(args.val_dir, train = False, balance = False)
         dev_loader = data.DataLoader(dev_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=False,
@@ -99,7 +99,7 @@ def main(args):
     # Start training
     log.info("Training...")
     steps_till_eval = args.eval_steps
-    epoch = step // int(len(train_dataset) * (0.8))
+    epoch = step // len(train_dataset)
 
     while epoch != args.num_epochs:
         epoch += 1
@@ -116,7 +116,7 @@ def main(args):
                 if(args.model_type == "baseline"):
                     score = model(x)
                 else:
-                    raise Exception("Model Type Invalid")
+                    raise Exception("Model Type is Invalid")
 
                 # calc loss
                 y = y.float().to(device)
@@ -124,15 +124,17 @@ def main(args):
                 # weight the BCE
                 weights = compute_class_weight(class_weight='balanced', classes= np.unique(y.cpu()), y= y.cpu().numpy())
                 weights=torch.tensor(weights,dtype=torch.float).to(device)
-                criterion = nn.BCEWithLogitsLoss(reduction= 'none')
+                # criterion = nn.BCEWithLogitsLoss(reduction= 'none')
+                criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'mean')
 
-                loss = criterion(score, y.unsqueeze(1))
-                for i in range(len(loss)):
-                    if y[i] == 0:
-                        loss[i] *= weights[0]
-                    else:
-                        loss[i] *= weights[1]
-                loss = torch.mean(loss)
+                loss = criterion(score, y) # do not need unsqueeze for CCELoss I think?
+                
+                # for i in range(len(loss)):
+                #     if y[i] == 0:
+                #         loss[i] *= weights[0]
+                #     else:
+                #         loss[i] *= weights[1]
+                loss = torch.mean(loss) # ?mean here or use weighted mean reduction in Loss?
                 loss_val = loss.item()
 
                 # backward pass here
@@ -202,17 +204,17 @@ def evaluate(args, model, data_loader, device):
             y = y.float().to(device)
             weights = compute_class_weight(class_weight='balanced', classes = np.unique(y.cpu()), y = y.cpu().numpy())
             weights=torch.tensor(weights,dtype=torch.float).to(device)
-            criterion = nn.BCEWithLogitsLoss(reduction = 'none')
-
-            preds, num_correct, acc = util.binary_acc(score, y.unsqueeze(1))
+            criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'none')
+            
+            preds, num_correct, acc = util.binary_acc(score, y.unsqueeze(1)) #? should we unsqueeze
             loss = criterion(score, y.unsqueeze(1))
-            for i in range(len(loss)):
-                if y[i] == 0:
-                    loss[i] *= weights[0]
-                else:
-                    loss[i] *= weights[1]
-
-            loss_val = torch.mean(loss)
+            # for i in range(len(loss)):
+            #     if y[i] == 0:
+            #         loss[i] *= weights[0]
+            #     else:
+            #?         loss[i] *= weights[1] seems like this is for binary classification, maybe we can use built in reduction
+            
+            loss_val = torch.mean(loss) # ? same here
             nll_meter.update(loss_val.item(), batch_size)
 
             # get acc and auroc
