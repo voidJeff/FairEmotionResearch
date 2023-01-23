@@ -48,7 +48,7 @@ def main(args):
     log.info("Making model....")
     if(args.model_type == "baseline"):
         # model = baseline_ff(hidden_size=args.hidden_size, drop_prob = args.drop_prob)
-        model = baseline_pretrain(in_features = 224*224)
+        model = baseline_pretrain(8)
     else:
         raise Exception("Model provided not valid")
 
@@ -128,7 +128,7 @@ def main(args):
                 criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'mean')
 
                 loss = criterion(score, y) # do not need unsqueeze for CCELoss I think?
-                
+
                 # for i in range(len(loss)):
                 #     if y[i] == 0:
                 #         loss[i] *= weights[0]
@@ -205,7 +205,7 @@ def evaluate(args, model, data_loader, device):
             weights = compute_class_weight(class_weight='balanced', classes = np.unique(y.cpu()), y = y.cpu().numpy())
             weights=torch.tensor(weights,dtype=torch.float).to(device)
             criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'none')
-            
+
             preds, num_correct, acc = util.binary_acc(score, y.unsqueeze(1)) #? should we unsqueeze
             loss = criterion(score, y.unsqueeze(1))
             # for i in range(len(loss)):
@@ -213,7 +213,7 @@ def evaluate(args, model, data_loader, device):
             #         loss[i] *= weights[0]
             #     else:
             #?         loss[i] *= weights[1] seems like this is for binary classification, maybe we can use built in reduction
-            
+
             loss_val = torch.mean(loss) # ? same here
             nll_meter.update(loss_val.item(), batch_size)
 
