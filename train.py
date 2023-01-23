@@ -14,8 +14,8 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import util
 
 from args import get_train_args
-from models import baseline_ff
-from util import LongCovidDataset
+from models import baseline_pretrain
+from util import AffectNetDataset
 from collections import OrderedDict
 from sklearn import metrics
 from tensorboardX import SummaryWriter
@@ -47,7 +47,7 @@ def main(args):
     # Get Model
     log.info("Making model....")
     if(args.model_type == "baseline"):
-        model = baseline_ff(hidden_size=args.hidden_size, drop_prob = args.drop_prob)
+        model = baseline_pretrain(7)
     else:
         raise Exception("Model provided not valid")
 
@@ -83,12 +83,12 @@ def main(args):
     # load in data
     log.info("Building dataset....")
     if(args.model_type == "baseline"):
-        train_dataset = LongCovidDataset(args.train_explicit_eval_file)
+        train_dataset = AffectNetDataset(args.train_dir, train = True, balance = False)
         train_loader = data.DataLoader(train_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.num_workers)
-        dev_dataset = LongCovidDataset(args.val_explicit_eval_file)
+        dev_dataset = AffectNetDataset(args.val_dir, train = False, balance = False)
         dev_loader = data.DataLoader(dev_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=False,
@@ -98,7 +98,7 @@ def main(args):
     # Start training
     log.info("Training...")
     steps_till_eval = args.eval_steps
-    epoch = step // int(len(train_dataset) * (0.8))
+    epoch = step // len(train_dataset)
 
     while epoch != args.num_epochs:
         epoch += 1
