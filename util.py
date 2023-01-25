@@ -52,7 +52,7 @@ class AffectNetDataset(data.Dataset):
             labels.append(label)
         
         self.data = pd.DataFrame({"image_num": image_nums, "label": labels})
-        self.data.labels = self.data.labels.astype(int)
+        self.data.label = self.data.label.astype(int)
 
         if balance: # !ignore for now, not downsampling
         
@@ -61,7 +61,7 @@ class AffectNetDataset(data.Dataset):
             g = data.groupby(label, group_keys=False)
             self.data = pd.DataFrame(g.apply(lambda x: x.sample(g.size().min()))).reset_index(drop=True)
 
-        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(labels), y= labels.numpy()) #? should we drop the .cpu() here?
+        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(labels), y= np.array(labels)) #? should we drop the .cpu() here?
 
     def __getitem__(self, index):
 
@@ -407,6 +407,28 @@ def binary_acc(y_pred, y_test):
     return y_pred_tag, correct_results_sum, acc
 
 
+
+def acc_score(logits, labels):
+    """Returns the mean accuracy of a model's predictions on a set of examples.
+
+    Args:
+        logits (torch.Tensor): model predicted logits
+            shape (examples, classes)
+        labels (torch.Tensor): classification labels from 0 to num_classes - 1
+            shape (examples,)
+    """
+
+    assert logits.dim() == 2
+    assert labels.dim() == 1
+    assert logits.shape[0] == labels.shape[0]
+
+    preds = torch.argmax(logits, dim = -1)
+    corrects_bool = preds == labels
+    corrects_bool = corrects_bool.type(torch.float)
+
+    num_correct = torch.sum(corrects_bool).item()
+    acc = torch.mean(corrects_bool).item()
+    return preds, num_correct, acc
 
 # def collate_fn(batch):
 #     r"""Puts each data field into a tensor with outer dimension batch size"""

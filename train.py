@@ -122,8 +122,7 @@ def main(args):
                     raise Exception("Model Type is Invalid")
 
                 # calc loss
-                y = y.float().to(device)
-
+                y = y.type(torch.LongTensor).to(device)
                 loss = criterion(score, y) # do not need unsqueeze for CCELoss I think?
                 loss_val = loss.item()
 
@@ -169,7 +168,6 @@ def evaluate(args, model, data_loader, device):
 
     model.eval()
     pred_dict = {} # id, prob and prediction
-    full_score = []
     full_labels = []
     predictions = []
 
@@ -191,11 +189,11 @@ def evaluate(args, model, data_loader, device):
                 raise Exception("Model Type Invalid")
 
             # calc loss
-            y = y.float().to(device)
-            criterion = nn.CrossEntropyLoss(weight=weights)
+            y = y.type(torch.LongTensor).to(device)
+            criterion = nn.CrossEntropyLoss()
 
-            preds, num_correct, acc = util.binary_acc(score, y.unsqueeze(1)) #? should we unsqueeze
-            loss = criterion(score, y.unsqueeze(1))
+            preds, num_correct, acc = util.acc_score(score, y) #? should we unsqueeze
+            loss = criterion(score, y)
 
             loss_val = loss.item() # ? same here
             nll_meter.update(loss_val, batch_size)
@@ -204,23 +202,21 @@ def evaluate(args, model, data_loader, device):
             num_corrects += num_correct
             num_samples += preds.size(0)
             predictions.extend(preds)
-            full_score.extend(torch.sigmoid(score).tolist())
             full_labels.extend(y)
 
 
         acc = float(num_corrects) / num_samples
 
-        # ROC
-        y_score = np.asarray(full_score)
+        # F1 Score
+        y_pred = np.asarray([pred.cpu() for pred in predictions]).astype(int)
         y = np.asarray([label.cpu() for label in full_labels]).astype(int)
-        print(predictions)
-        auc = metrics.roc_auc_score(y, y_score)
+        f1 = metrics.f1_score(y, y_pred, average = 'macro')
 
     model.train()
 
     results_list = [("NLL", nll_meter.avg),
                     ("Acc", acc),
-                    ("AUROC", auc)]
+                    ("F1 Score", f1)]
     results = OrderedDict(results_list)
 
     return results, pred_dict
