@@ -101,6 +101,9 @@ def main(args):
     steps_till_eval = args.eval_steps
     epoch = step // len(train_dataset)
 
+    weights = torch.tensor(train_dataset.label_weights,dtype=torch.float).to(device)
+    criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'mean')
+
     while epoch != args.num_epochs:
         epoch += 1
         log.info(f'Starting epoch {epoch}....')
@@ -121,20 +124,7 @@ def main(args):
                 # calc loss
                 y = y.float().to(device)
 
-                # weight the BCE
-                # weights = compute_class_weight(class_weight='balanced', classes= np.unique(y.cpu()), y= y.cpu().numpy())
-                weights = torch.tensor(train_dataset.label_weights,dtype=torch.float).to(device)
-                # criterion = nn.BCEWithLogitsLoss(reduction= 'none')
-                criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'mean')
-
                 loss = criterion(score, y) # do not need unsqueeze for CCELoss I think?
-
-                # for i in range(len(loss)):
-                #     if y[i] == 0:
-                #         loss[i] *= weights[0]
-                #     else:
-                #         loss[i] *= weights[1]
-                loss = torch.mean(loss) # ?mean here or use weighted mean reduction in Loss?
                 loss_val = loss.item()
 
                 # backward pass here
@@ -202,20 +192,13 @@ def evaluate(args, model, data_loader, device):
 
             # calc loss
             y = y.float().to(device)
-            weights = compute_class_weight(class_weight='balanced', classes = np.unique(y.cpu()), y = y.cpu().numpy())
-            weights=torch.tensor(weights,dtype=torch.float).to(device)
-            criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'none')
+            criterion = nn.CrossEntropyLoss(weight=weights)
 
             preds, num_correct, acc = util.binary_acc(score, y.unsqueeze(1)) #? should we unsqueeze
             loss = criterion(score, y.unsqueeze(1))
-            # for i in range(len(loss)):
-            #     if y[i] == 0:
-            #         loss[i] *= weights[0]
-            #     else:
-            #?         loss[i] *= weights[1] seems like this is for binary classification, maybe we can use built in reduction
 
-            loss_val = torch.mean(loss) # ? same here
-            nll_meter.update(loss_val.item(), batch_size)
+            loss_val = loss.item() # ? same here
+            nll_meter.update(loss_val, batch_size)
 
             # get acc and auroc
             num_corrects += num_correct

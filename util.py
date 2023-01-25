@@ -61,11 +61,7 @@ class AffectNetDataset(data.Dataset):
             g = data.groupby(label, group_keys=False)
             self.data = pd.DataFrame(g.apply(lambda x: x.sample(g.size().min()))).reset_index(drop=True)
 
-        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(labels.cpu()), y= labels.cpu().numpy()) #? should we drop the .cpu() here?
-
-    # filename = train_set/1001.jpg
-
-    # ex. 1000 happy, 200 sad, 500 angry
+        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(labels), y= labels.numpy()) #? should we drop the .cpu() here?
 
     def __getitem__(self, index):
 
