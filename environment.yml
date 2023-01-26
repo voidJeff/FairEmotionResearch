@@ -1,0 +1,21 @@
+name: FairEmotion
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.6.8
+  - ujson
+  - numpy
+  - opencv-python
+  - pip
+  - scikit-learn
+  - shutil
+  - tensorboard
+  - tensorflow
+  - tensorboardX
+  - torchvision
+  - tqdm
+  - urllib3
+  - pip:
+    - torch==1.12.1
