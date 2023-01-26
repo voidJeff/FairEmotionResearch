@@ -7,10 +7,9 @@ dependencies:
   - python=3.6.8
   - ujson
   - numpy
-  - opencv-python
+  - opencv
   - pip
   - scikit-learn
-  - shutil
   - tensorboard
   - tensorflow
   - tensorboardX
