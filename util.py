@@ -316,8 +316,10 @@ def get_available_devices():
         gpu_ids += [gpu_id for gpu_id in range(torch.cuda.device_count())]
         device = torch.device(f'cuda:{gpu_ids[0]}')
         torch.cuda.set_device(device)
+        print('using GPU')
     else:
         device = torch.device('cpu')
+        print('using cpu')
 
     return device, gpu_ids
 
