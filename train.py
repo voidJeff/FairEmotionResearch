@@ -48,7 +48,7 @@ def main(args):
     log.info("Making model....")
     if(args.model_type == "baseline"):
         # model = baseline_ff(hidden_size=args.hidden_size, drop_prob = args.drop_prob)
-        model = baseline_pretrain(8)
+        model = baseline_pretrain(7)
     else:
         raise Exception("Model provided not valid")
 
