@@ -47,7 +47,7 @@ class AffectNetDataset(data.Dataset):
             image_num = re.findall(r'(\d+)', str(annotation))[0]
             label = np.load(annotation).item()
 
-            if label == 7:
+            if label == '7':
                 continue
 
             image_nums.append(image_num)
