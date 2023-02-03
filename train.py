@@ -110,7 +110,14 @@ def main(args):
     # Start training
     log.info("Training...")
     steps_till_eval = args.eval_steps
-    epoch = step // len(train_dataset)
+
+    # calc epoch 
+    if args.dataset == "cafe":
+        step = 0
+        epoch = step // len(train_dataset)
+    else:
+        epoch = step // len(train_dataset)
+    
 
     weights = torch.tensor(train_dataset.label_weights,dtype=torch.float).to(device)
     criterion = nn.CrossEntropyLoss(weight=weights, reduction= 'mean')

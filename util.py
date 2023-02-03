@@ -137,7 +137,7 @@ class CAFEDataset(data.Dataset):
 
         # use the df to read in image for the given index
         image_path = "cropped_" + self.data.loc[index, 'Orig_filepath']
-        print(image_path)
+
         image = Image.open(image_path).convert("RGB")
 
         if self.train:
