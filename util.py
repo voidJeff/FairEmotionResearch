@@ -165,7 +165,8 @@ class CAFEDataset(data.Dataset):
                 ]
             )
         image = std_image(image)
-        assert(image.shape == (3, 224, 224))
+        if(image.shape != (3, 224, 224)):
+            raise Exception("image shape wrong. {}, {}".format(self.data.loc[index,'Internal_id'], image.shape))
 
         label = self.data.loc[index, "label"]
         internal_id = self.data.loc[index, 'Internal_id']
