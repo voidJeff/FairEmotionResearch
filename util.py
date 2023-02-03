@@ -117,14 +117,13 @@ class CAFEDataset(data.Dataset):
     """
     def __init__(
         self,
-        data_dir,
         data_csv,
         train,
         balance = None
     ):
 
         # make a two col pandas df of image number : label
-        self.data_dir = data_dir
+        assert(os.isdir("./cropped_sessions"))
         self.data_csv = data_csv
         self.train = train
         
@@ -136,7 +135,7 @@ class CAFEDataset(data.Dataset):
     def __getitem__(self, index):
 
         # use the df to read in image for the given index
-        image_path = self.data['cropped_filepath']
+        image_path = "cropped_" + self.data.loc[index, 'Orig_filepath']
 
         image = Image.open(image_path).convert("RGB")
 

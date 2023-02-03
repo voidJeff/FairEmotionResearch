@@ -82,6 +82,16 @@ def add_common_args(parser):
     parser.add_argument('--val_dir',
                         type=str,
                         default='./data/affectnet/val_set')
+    parser.add_argument('--cafe_train_csv',
+                        type=str,
+                        default='./cafe_train.csv')
+    parser.add_argument('--cafe_val_csv',
+                        type=str,
+                        default='./cafe_val.csv')
+    parser.add_argument('--cafe_test_csv',
+                        type=str,
+                        default='./cafe_test.csv')
+
 
 
 
@@ -113,7 +123,10 @@ def add_train_test_args(parser):
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
-
+    parser.add_argument('--dataset',
+                        type=str,
+                        default="affectnet",
+                        help='Dataset to train on')
 def get_test_args():
     """Get arguments needed in test.py."""
     parser = argparse.ArgumentParser('Test a trained model on Long Covid Datasets')

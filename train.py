@@ -15,7 +15,7 @@ import util
 
 from args import get_train_args
 from models import baseline_pretrain
-from util import AffectNetDataset
+from util import AffectNetDataset, CAFEDataset
 from collections import OrderedDict
 from sklearn import metrics
 from tensorboardX import SummaryWriter
@@ -83,7 +83,18 @@ def main(args):
 
     # load in data
     log.info("Building dataset....")
-    if(args.model_type == "baseline"):
+    if(args.dataset == "affectnet"):
+        train_dataset = AffectNetDataset(args.train_dir, train = True, balance = False)
+        train_loader = data.DataLoader(train_dataset,
+                                    batch_size=args.batch_size,
+                                    shuffle=True,
+                                    num_workers=args.num_workers)
+        dev_dataset = AffectNetDataset(args.val_dir, train = False, balance = False)
+        dev_loader = data.DataLoader(dev_dataset,
+                                    batch_size=args.batch_size,
+                                    shuffle=False,
+                                    num_workers=args.num_workers)
+    elif(args.dataset == "cafe"):
         train_dataset = AffectNetDataset(args.train_dir, train = True, balance = False)
         train_loader = data.DataLoader(train_dataset,
                                     batch_size=args.batch_size,
