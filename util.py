@@ -123,20 +123,21 @@ class CAFEDataset(data.Dataset):
     ):
 
         # make a two col pandas df of image number : label
-        assert(os.isdir("./cropped_sessions"))
+        assert(os.path.isdir("./cropped_sessions"))
         self.data_csv = data_csv
         self.train = train
         
         self.data = pd.read_csv(data_csv)
         self.data.label = self.data.label.astype(int)
+        self.labels = self.data.label.tolist()
 
-        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(labels), y= np.array(labels)) #? should we drop the .cpu() here?
+        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(self.labels), y= np.array(self.labels)) #? should we drop the .cpu() here?
 
     def __getitem__(self, index):
 
         # use the df to read in image for the given index
         image_path = "cropped_" + self.data.loc[index, 'Orig_filepath']
-
+        print(image_path)
         image = Image.open(image_path).convert("RGB")
 
         if self.train:
@@ -167,12 +168,10 @@ class CAFEDataset(data.Dataset):
         assert(image.shape == (3, 224, 224))
 
         label = self.data.loc[index, "label"]
-        session_id = self.data.loc[index, "session_id"]
-        internal_id = self.data.loc[index, 'internal_id']
-        image_id = session_id + "-" + internal_id
+        internal_id = self.data.loc[index, 'Internal_id']
 
         example = (
-            image_id,
+            internal_id,
             image,
             label
         )

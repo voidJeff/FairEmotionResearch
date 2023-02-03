@@ -95,12 +95,12 @@ def main(args):
                                     shuffle=False,
                                     num_workers=args.num_workers)
     elif(args.dataset == "cafe"):
-        train_dataset = AffectNetDataset(args.train_dir, train = True, balance = False)
+        train_dataset = CAFEDataset(args.cafe_train_csv, train = True, balance = False)
         train_loader = data.DataLoader(train_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.num_workers)
-        dev_dataset = AffectNetDataset(args.val_dir, train = False, balance = False)
+        dev_dataset = CAFEDataset(args.cafe_val_csv, train = False, balance = False)
         dev_loader = data.DataLoader(dev_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=False,
