@@ -146,7 +146,7 @@ class CAFEDataset(data.Dataset):
                 transforms.ColorJitter(brightness=0.5, hue = 0.3),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Resize(224),
+                transforms.Resize((224,224)),
                 transforms.Normalize(
                     mean=(0.485, 0.456, 0.406), 
                     std=(0.229, 0.224, 0.225)
@@ -157,7 +157,7 @@ class CAFEDataset(data.Dataset):
             std_image = transforms.Compose(
                 [
                     transforms.ToTensor(),
-                    transforms.Resize(224),
+                    transforms.Resize((224,224)),
                     transforms.Normalize(                    
                     mean=(0.485, 0.456, 0.406), 
                     std=(0.229, 0.224, 0.225)
