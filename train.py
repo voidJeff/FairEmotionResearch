@@ -109,7 +109,7 @@ def main(args):
         log.info(f'Starting epoch {epoch}....')
         with torch.enable_grad(), \
             tqdm(total=len(train_loader.dataset)) as progress_bar:
-            for x, y in train_loader:
+            for img_id, x, y in train_loader:
                 # forward pass here
                 x = x.float().to(device)
 
@@ -176,7 +176,7 @@ def evaluate(args, model, data_loader, device):
 
     with torch.no_grad(), \
         tqdm(total=len(data_loader.dataset)) as progress_bar:
-        for x, y in data_loader:
+        for img_id, x, y in data_loader:
             # forward pass here
             x = x.float().to(device)
             # text = text.to(device)

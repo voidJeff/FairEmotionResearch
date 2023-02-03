@@ -98,8 +98,9 @@ class AffectNetDataset(data.Dataset):
         assert(image.shape == (3, 224, 224))
 
         label = self.data.loc[index, "label"]
-
+        image_num = self.data.loc[index, 'image_num']
         example = (
+            image_num,
             image,
             label
         )
@@ -110,6 +111,78 @@ class AffectNetDataset(data.Dataset):
 
         return len(self.data)
 
+class CAFEDataset(data.Dataset):
+    """
+    Preprocess and prepare data for feeding into NN
+    """
+    def __init__(
+        self,
+        data_dir,
+        data_csv,
+        train,
+        balance = None
+    ):
+
+        # make a two col pandas df of image number : label
+        self.data_dir = data_dir
+        self.data_csv = data_csv
+        self.train = train
+        
+        self.data = pd.read_csv(data_csv)
+        self.data.label = self.data.label.astype(int)
+
+        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(labels), y= np.array(labels)) #? should we drop the .cpu() here?
+
+    def __getitem__(self, index):
+
+        # use the df to read in image for the given index
+        image_path = self.data['cropped_filepath']
+
+        image = Image.open(image_path).convert("RGB")
+
+        if self.train:
+            std_image = transforms.Compose(
+            [
+                transforms.ColorJitter(brightness=0.5, hue = 0.3),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Resize(224),
+                transforms.Normalize(
+                    mean=(0.485, 0.456, 0.406), 
+                    std=(0.229, 0.224, 0.225)
+                )
+            ]
+        )
+        else:
+            std_image = transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Resize(224),
+                    transforms.Normalize(                    
+                    mean=(0.485, 0.456, 0.406), 
+                    std=(0.229, 0.224, 0.225)
+                    )
+                ]
+            )
+        image = std_image(image)
+        assert(image.shape == (3, 224, 224))
+
+        label = self.data.loc[index, "label"]
+        session_id = self.data.loc[index, "session_id"]
+        internal_id = self.data.loc[index, 'internal_id']
+        image_id = session_id + "-" + internal_id
+
+        example = (
+            image_id,
+            image,
+            label
+        )
+
+        return example
+
+    def __len__(self):
+
+        return len(self.data)
 
 class AverageMeter:
     """Keep track of average values over time.
