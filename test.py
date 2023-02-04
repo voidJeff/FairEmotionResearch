@@ -92,7 +92,8 @@ def main(args):
 
             loss = criterion(score, y)
             nll_meter.update(loss.item(), batch_size)
-
+            progress_bar.update(batch_size)
+            progress_bar.set_postfix(loss = loss.item())
              # get acc and auroc
             num_corrects += num_correct
             num_samples += preds.size(0)
