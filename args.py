@@ -123,6 +123,10 @@ def add_train_test_args(parser):
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
+    parser.add_argument('--load_path_step_bool',
+                        type=bool,
+                        default=True,
+                        help='Whether to use saved step when loading in model')
     parser.add_argument('--dataset',
                         type=str,
                         default="affectnet",

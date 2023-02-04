@@ -57,7 +57,11 @@ def main(args):
     # load the step if restarting
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
-        model, step = util.load_model(model, args.load_path, args.gpu_ids)
+        if args.load_path_step_bool:
+            model, step = util.load_model(model, args.load_path, args.gpu_ids)
+        else:
+            model = util.load_model(model, args.load_path, args.gpu_ids, return_step = False)
+            step = 0
     else:
         step = 0
 
@@ -112,11 +116,7 @@ def main(args):
     steps_till_eval = args.eval_steps
 
     # calc epoch 
-    if args.dataset == "cafe":
-        step = 0
-        epoch = step // len(train_dataset)
-    else:
-        epoch = step // len(train_dataset)
+    epoch = step // len(train_dataset)
     
 
     weights = torch.tensor(train_dataset.label_weights,dtype=torch.float).to(device)
