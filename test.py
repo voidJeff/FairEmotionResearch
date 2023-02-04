@@ -97,7 +97,7 @@ def main(args):
             num_corrects += num_correct
             num_samples += preds.size(0)
 
-            full_img_id.extend(img_id)
+            full_img_id.extend([ids.item() for ids in img_id])
             full_preds.extend(preds)
             full_labels.extend(y)
 
@@ -108,7 +108,7 @@ def main(args):
         y = np.asarray([label.cpu() for label in full_labels]).astype(int)
         f1 = metrics.f1_score(y, y_pred, average = 'macro')
 
-        df = pd.DataFrame(list(zip(full_img_id, full_preds, full_labels)), columns =['img_id', 'preds', 'labels'])
+        df = pd.DataFrame(list(zip(full_img_id, y_pred, y)), columns =['img_id', 'preds', 'labels'])
         sub_path = join(args.save_dir, args.split + '_' + args.sub_file)
         df.to_csv(sub_path, encoding = "utf-8")
 
