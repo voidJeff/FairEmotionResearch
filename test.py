@@ -104,7 +104,7 @@ def main(args):
         acc = float(num_corrects) / num_samples
 
         # F1 Score
-        y_pred = np.asarray([pred.cpu() for pred in predictions]).astype(int)
+        y_pred = np.asarray([pred.cpu() for pred in full_preds]).astype(int)
         y = np.asarray([label.cpu() for label in full_labels]).astype(int)
         f1 = metrics.f1_score(y, y_pred, average = 'macro')
 
