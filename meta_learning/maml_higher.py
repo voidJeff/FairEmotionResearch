@@ -16,7 +16,7 @@ import higher
 import wandb
 import matplotlib
 
-import affectnet_util
+import affectnet_meta_util
 
 import util
 import sys
@@ -41,11 +41,10 @@ class MAML:
 
     def __init__(
             self,
+            torch_dset,
             num_input_channels,
             num_outputs,
-            num_inner_steps,
             inner_lr,
-            learn_inner_lrs,
             outer_lr,
             l2_wd,
             log_dir
@@ -82,13 +81,7 @@ class MAML:
         self._model_ft.fc = nn.Linear(num_ftrs, self.num_outputs)
         
         self._model_ft = self._model_ft.to(DEVICE)
-            
-        self._num_inner_steps = num_inner_steps
-        # self._inner_lrs = {
-        #     k: torch.tensor(inner_lr, requires_grad=learn_inner_lrs)
-        #     for k in self._inner_params.keys()
-        # }
-        
+
         self._outer_lr = outer_lr
         self._optimizer = torch.optim.Adam(
             list(self._model_ft.parameters()),
@@ -101,7 +94,7 @@ class MAML:
 
         self._start_train_step = 0
 
-    def _outer_step(self, task_batch, train, step=None):
+    def _outer_step(self, task_batch, train_weights, train, step=None):
         """Computes the MAML loss and metrics on a batch of tasks.
 
         Args:
@@ -116,82 +109,45 @@ class MAML:
             accuracy_query (float): query set accuracy of the adapted
                 parameters, averaged over the task batch
         """
-        outer_loss_batch = []
-        accuracies_support_batch = []
-        accuracy_query_batch = []
-        task_idx = 0
+        loss_batch = []
+        accuracy_batch = []
         for task in task_batch:
-            images_support, labels_support, images_query, labels_query = task
-            images_support = images_support.to(DEVICE)
-            labels_support = labels_support.to(DEVICE)
-            images_query = images_query.to(DEVICE)
-            labels_query = labels_query.to(DEVICE)
+            images_full, labels_full = task
+            images_full = images_full.to(DEVICE)
+            labels_full = labels_full.to(DEVICE)
 
-            task_idx += 1
+            batch_size = images_full.shape[0] // 7
 
-            # use higher
-            inner_opt = torch.optim.SGD(self._inner_net.parameters(), lr=1e-1)
+            for idx, image_batch, label_batch in enumerate(zip(torch.split(images_full, batch_size, dim = 0), torch.split(labels_full, batch_size))):
+                logits = self._model_ft(image_batch)
+                loss = F.cross_entropy(weight=train_weights[idx], reduction= 'mean')
+            # # use higher
+            # inner_opt = torch.optim.SGD(self._inner_net.parameters(), lr=1e-1)
 
-            with higher.innerloop_ctx(
-                self._inner_net, inner_opt, copy_initial_weights= not train, track_higher_grads = train,
-            ) as (fnet, diffopt):
-                # adapt in inner loop
-                support_accs = []
-                for _ in range(self._num_inner_steps):
-                    if self.pretrain:
-                        support_pretrained = self.pretrain_model_transform(support_augs)
-                        support_pretrained = self.pretrain_model(support_pretrained)
-                        spt_logits = fnet(support_pretrained)
-                        spt_loss = F.cross_entropy(spt_logits, labels_augs)
+            # with higher.innerloop_ctx(
+            #     self._inner_net, inner_opt, copy_initial_weights= not train, track_higher_grads = train,
+            # ) as (fnet, diffopt):
+            #     # adapt in inner loop
+            #     support_accs = []
+            #     for _ in range(self._num_inner_steps):
+            #         spt_logits = fnet(support_augs)
+            #         spt_loss = F.cross_entropy(spt_logits, labels_augs)
 
-                        support_accs.append(util.score(spt_logits, labels_augs))
-                        diffopt.step(spt_loss)
-                    else:
-                        spt_logits = fnet(support_augs)
-                        spt_loss = F.cross_entropy(spt_logits, labels_augs)
+            #         support_accs.append(util.score(spt_logits, labels_augs))
+            #         diffopt.step(spt_loss)
 
-                        support_accs.append(util.score(spt_logits, labels_augs))
-                        diffopt.step(spt_loss)
+            #     spt_logits = fnet(support_augs)
+            #     support_accs.append(util.score(spt_logits, labels_augs))
+            #     accuracies_support_batch.append(support_accs)
 
+            #     qry_logits = fnet(images_query)
+            #     qry_loss = F.cross_entropy(qry_logits, labels_query)
+            #     accuracy_query_batch.append(util.score(qry_logits, labels_query))
 
-                # query time
-                if self.pretrain:
-                    support_pretrained = self.pretrain_model_transform(support_augs)
-                    support_pretrained = self.pretrain_model(support_pretrained)
-                    spt_logits = fnet(support_pretrained)
-                    support_accs.append(util.score(spt_logits, labels_augs))
-                    accuracies_support_batch.append(support_accs)
+            #     if train:
+            #         qry_loss.backward()
+            #     outer_loss_batch.append(qry_loss.detach())              
 
-                    query_pretrained = self.pretrain_model_transform(images_query)
-                    query_pretrained = self.pretrain_model(query_pretrained)
-                    qry_logits = fnet(query_pretrained)
-                    qry_loss = F.cross_entropy(qry_logits, labels_query)
-                    accuracy_query_batch.append(util.score(qry_logits, labels_query))
-
-                    if train:
-                        qry_loss.backward()
-
-                    outer_loss_batch.append(qry_loss.detach())
-
-
-                else:
-                    spt_logits = fnet(support_augs)
-                    support_accs.append(util.score(spt_logits, labels_augs))
-                    accuracies_support_batch.append(support_accs)
-
-                    qry_logits = fnet(images_query)
-                    qry_loss = F.cross_entropy(qry_logits, labels_query)
-                    accuracy_query_batch.append(util.score(qry_logits, labels_query))
-
-                    if train:
-                        qry_loss.backward()
-                    outer_loss_batch.append(qry_loss.detach())              
-
-
-
-            # ********************************************************
-            # ******************* YOUR CODE HERE *********************
-            # ********************************************************
         outer_loss = torch.mean(torch.stack(outer_loss_batch))
         accuracies_support = np.mean(
             accuracies_support_batch,
@@ -220,7 +176,7 @@ class MAML:
         ):
             self._optimizer.zero_grad()
             outer_loss, accuracies_support, accuracy_query = (
-                self._outer_step(task_batch, train=True, step=i_step)
+                self._outer_step(task_batch, train_weights = dataloader_train.dataset.weight_dict, train=True, step=i_step)
             )
 
             self._optimizer.step()
@@ -394,10 +350,8 @@ def main(args):
     wandb.init(project="test-project", entity="cs330_team", config=args, name=wandb_name, sync_tensorboard=True)
     writer = tensorboard.SummaryWriter(log_dir=log_dir)
 
-    if args.dataset == 'omniglot':
-        num_input_channels = 1
-    else:
-        num_input_channels = 3
+
+    num_input_channels = 3
     maml = MAML(
         num_input_channels,
         args.num_way,
@@ -432,7 +386,7 @@ def main(args):
             f'num_query={args.num_query}, '
             f'num_augs={args.num_augs}'
         )
-        if args.dataset == "omniglot":
+        if args.dataset == "affectnet":
             dataloader_train = omniglot.get_omniglot_dataloader(
                 'train',
                 args.batch_size,
@@ -485,6 +439,8 @@ def main(args):
                 args.num_query,
                 args.batch_size * 4
             )
+        else:
+            raise Exception("Invalid Dataset")
         maml.train(
             dataloader_train,
             dataloader_val,

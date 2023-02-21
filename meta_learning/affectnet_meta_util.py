@@ -6,6 +6,9 @@ import gzip
 import imageio
 import numpy as np
 import torch
+from ../util import AffectNetDataset
+from sklearn.utils.class_weight import compute_class_weight
+
 from torch.utils.data import dataset, sampler, dataloader
 from torchvision.transforms import Compose, ToTensor, Resize, Normalize
 from torchvision.models import squeezenet1_1, SqueezeNet1_1_Weights
@@ -53,8 +56,8 @@ class AffectNetMetaDataset(dataset.Dataset):
     pairs.
     """
 
-    def __init__(self, num_tasks, num_support, num_query, data_csv):
-        """Inits ImagenetDataset.
+    def __init__(self, batch_size, data_csv):
+        """Inits AffectNetMetaDataset.
 
         Args:
             num_support (int): number of support examples per class
@@ -62,15 +65,19 @@ class AffectNetMetaDataset(dataset.Dataset):
         """
         super().__init__()
 
-        # get all image folders
-        self._image_folders = glob.glob(
-            os.path.join(self._MINY_IMAGENET_PATH, '*/'))
+        # read in data
+        self._data = pd.read_csv(data_csv)
+        self._task_idx = {}
+        for i, race in enumerate(np.unique(self._data.race)):
+            self._task_idx[i] == race
+        
+        self._batch_size = batch_size
 
-        # check problem arguments
-        assert num_support + num_query <= NUM_SAMPLES_PER_CLASS
-        self._num_tasks = num_tasks
-        self._num_support = num_support
-        self._num_query = num_query
+        # get weight info
+        self.weight_dict = {}
+        for idx, race in self._task_idx.items():
+            temp_filter = self._data.loc[self._data['race'] == race, :]
+            self.weight_dict[idx] = compute_class_weight(class_weight='balanced', classes= np.unique(temp_filter.label), y= np.array(temp_filter.label)) #? should we drop the .cpu() here?
 
     def __getitem__(self, class_idxs):
         """Constructs a task.
@@ -90,40 +97,32 @@ class AffectNetMetaDataset(dataset.Dataset):
             labels_query (Tensor): task query labels
                 shape (num_way * num_query,)
         """
-        images_support, images_query = [], []
-        labels_support, labels_query = [], []
+        images_full, labels_full = [], []
 
-        for label, class_idx in enumerate(class_idxs):
+        for class_idx in class_idxs:
             # get a class's examples and sample from them
-            all_file_paths = glob.glob(
-                os.path.join(self._image_folders[class_idx], '*.jpg')
-            )
             sampled_file_paths = np.random.default_rng().choice(
-                all_file_paths,
-                size=self._num_support + self._num_query,
+                self._data.loc[self._data['race'] == self._task_idx[class_idx], :].img_path,
+                size=self._batch_size,
                 replace=False
             )
             images = [load_image(file_path) for file_path in sampled_file_paths]
-
+            label = self._data.loc[self._data.img_path.isin(samples),"label"].tolist()
             # split sampled examples into support and query
-            images_support.extend(images[:self._num_support])
-            images_query.extend(images[self._num_support:])
-            labels_support.extend([label] * self._num_support)
-            labels_query.extend([label] * self._num_query)
+            images_full.extend(images)
+            labels_full.extend([label])
 
         # aggregate into tensors
-        images_support = torch.stack(images_support)  # shape (N*S, C, H, W)
-        labels_support = torch.tensor(labels_support)  # shape (N*S)
-        images_query = torch.stack(images_query)
-        labels_query = torch.tensor(labels_query)
+        images_full = torch.stack(images_full)  # shape (7*B, C, H, W)
+        labels_full = torch.tensor(labels_full)  # shape (7*B)
 
-        return images_support, labels_support, images_query, labels_query
+        return images_full, labels_full
 
 
-class ImagenetSampler(sampler.Sampler):
+class AffectnetRaceSampler(sampler.Sampler):
     """Samples task specification keys for an OmniglotDataset."""
 
-    def __init__(self, split_idxs, num_way, num_tasks):
+    def __init__(self, num_its_per_epoch):
         """Inits OmniglotSampler.
 
         Args:
@@ -133,36 +132,30 @@ class ImagenetSampler(sampler.Sampler):
             num_tasks (int): number of tasks to sample
         """
         super().__init__(None)
-        self._split_idxs = split_idxs
-        self._num_way = num_way
-        self._num_tasks = num_tasks
+        self._split_idxs = [0,1,2,3,4,5,6]
+        self._num_its_per_epoch = num_its_per_epoch
 
     def __iter__(self):
         return (
-            np.random.default_rng().choice(
-                self._split_idxs,
-                size=self._num_way,
-                replace=False
-            ) for _ in range(self._num_tasks)
+            self._split_idxs for _ in range(self._num_its_per_epoch)
         )
 
     def __len__(self):
-        return self._num_tasks
+        return self._num_its_per_epoch
 
 
 def identity(x):
     return x
 
 
-def get_imagenet_dataloader(
+def get_affectnet_meta_dataloader(
         split,
         batch_size,
-        num_way,
-        num_support,
-        num_query,
-        num_tasks_per_epoch
+        task_batch_size,
+        data_csv,
+        num_its_per_epoch
 ):
-    """Returns a dataloader.DataLoader for Omniglot.
+    """Returns a dataloader.DataLoader for affectnet meta.
 
     Args:
         split (str): one of 'train', 'val', 'test'
@@ -174,22 +167,19 @@ def get_imagenet_dataloader(
             exhausted
     """
 
-    if split == 'train':
-        split_idxs = range(NUM_TRAIN_CLASSES)
-    elif split == 'val':
-        split_idxs = range(
-            NUM_TRAIN_CLASSES,
-            NUM_TRAIN_CLASSES + NUM_VAL_CLASSES
+    if split == "train":
+        return dataloader.DataLoader(
+            dataset=AffectNetMetaDataset(batch_size, data_csv),
+            batch_size=task_batch_size,
+            sampler=AffectnetRaceSampler(num_its_per_epoch),
+            num_workers=8,
+            collate_fn=identity,
+            pin_memory=torch.cuda.is_available(),
+            drop_last=True
         )
-    else:
-        raise ValueError
-
-    return dataloader.DataLoader(
-        dataset=ImagenetDataset(num_support, num_query, dataset_shuffle_seed),
-        batch_size=batch_size,
-        sampler=ImagenetSampler(split_idxs, num_way, num_tasks_per_epoch),
-        num_workers=8,
-        collate_fn=identity,
-        pin_memory=torch.cuda.is_available(),
-        drop_last=True
-    )
+    elif split == "val":
+        dev_dataset = AffectNetDataset('../data/affectnet/val_set', train = False, balance = False)
+        return dataloader.DataLoader(dev_dataset,
+                                batch_size=batch_size,
+                                shuffle=False,
+                                num_workers=args.num_workers)
