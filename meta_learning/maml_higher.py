@@ -10,7 +10,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch import autograd
 from torch.utils import tensorboard
-from torchvision.models import squeezenet1_1, SqueezeNet1_1_Weights
+from torchvision.models import resnet50, ResNet50_Weights
 import torchvision.transforms as transforms
 import higher
 import wandb
@@ -118,9 +118,22 @@ class MAML:
 
             batch_size = images_full.shape[0] // 7
 
+            task_loss = []
+            task_acc = []
             for idx, image_batch, label_batch in enumerate(zip(torch.split(images_full, batch_size, dim = 0), torch.split(labels_full, batch_size))):
                 logits = self._model_ft(image_batch)
-                loss = F.cross_entropy(weight=train_weights[idx], reduction= 'mean')
+                loss = F.cross_entropy(logits, label_batch, weight=train_weights[idx], reduction= 'mean')
+
+                # backprop the loss
+                loss.backward()
+                _, _, acc = affectnet_meta_util.acc_score(logits, label_batch)
+
+                # append accs
+                task_loss.append(loss.item())
+                task_acc.append(acc)
+
+            loss_batch.append(task_loss)
+            accuracy_batch.append(np.mean(task_acc))
             # # use higher
             # inner_opt = torch.optim.SGD(self._inner_net.parameters(), lr=1e-1)
 
@@ -148,13 +161,9 @@ class MAML:
             #         qry_loss.backward()
             #     outer_loss_batch.append(qry_loss.detach())              
 
-        outer_loss = torch.mean(torch.stack(outer_loss_batch))
-        accuracies_support = np.mean(
-            accuracies_support_batch,
-            axis=0
-        )
-        accuracy_query = np.mean(accuracy_query_batch)
-        return outer_loss, accuracies_support, accuracy_query
+        loss_full = torch.mean(torch.stack(loss_batch))
+        acc_full = np.mean(accuracy_batch)
+        return loss_full, acc_full
 
     def train(self, dataloader_train, dataloader_val, writer):
         """Train the MAML.
@@ -175,7 +184,7 @@ class MAML:
                 start=self._start_train_step
         ):
             self._optimizer.zero_grad()
-            outer_loss, accuracies_support, accuracy_query = (
+            outer_loss, accuracy_query = (
                 self._outer_step(task_batch, train_weights = dataloader_train.dataset.weight_dict, train=True, step=i_step)
             )
 
@@ -185,24 +194,10 @@ class MAML:
                 print(
                     f'Iteration {i_step}: '
                     f'loss: {outer_loss.item():.3f}, '
-                    f'pre-adaptation support accuracy: '
-                    f'{accuracies_support[0]:.3f}, '
-                    f'post-adaptation support accuracy: '
-                    f'{accuracies_support[-1]:.3f}, '
-                    f'post-adaptation query accuracy: '
+                    f'accuracy: '
                     f'{accuracy_query:.3f}'
                 )
                 writer.add_scalar('loss/train', outer_loss.item(), i_step)
-                writer.add_scalar(
-                    'train_accuracy/pre_adapt_support',
-                    accuracies_support[0],
-                    i_step
-                )
-                writer.add_scalar(
-                    'train_accuracy/post_adapt_support',
-                    accuracies_support[-1],
-                    i_step
-                )
                 writer.add_scalar(
                     'train_accuracy/post_adapt_query',
                     accuracy_query,
@@ -210,63 +205,25 @@ class MAML:
                 )
 
             if i_step % VAL_INTERVAL == 0:
-                losses = []
-                accuracies_pre_adapt_support = []
-                accuracies_post_adapt_support = []
-                accuracies_post_adapt_query = []
-                for val_task_batch in dataloader_val:
-                    outer_loss, accuracies_support, accuracy_query = (
-                        self._outer_step(val_task_batch, train=False, aug_type=self.train_aug_type)
-                    )
-                    losses.append(outer_loss.item())
-                    accuracies_pre_adapt_support.append(accuracies_support[0])
-                    accuracies_post_adapt_support.append(accuracies_support[-1])
-                    accuracies_post_adapt_query.append(accuracy_query)
-                loss = np.mean(losses)
-                accuracy_pre_adapt_support = np.mean(
-                    accuracies_pre_adapt_support
-                )
-                accuracy_post_adapt_support = np.mean(
-                    accuracies_post_adapt_support
-                )
-                accuracy_post_adapt_query = np.mean(
-                    accuracies_post_adapt_query
-                )
-                history_accuracy_post_adapt_query.append(accuracy_post_adapt_query)
-                avg_num = np.min((len(history_accuracy_post_adapt_query),5))
-                avg5_accuracy_post_adapt_query = np.mean(history_accuracy_post_adapt_query[-avg_num:])
+                results, pred_dict = affectnet_meta_util.evaluate(self._model_ft, dataloader_val, DEVICE)
                 
                 print(
                     f'Validation: '
-                    f'loss: {loss:.3f}, '
-                    f'pre-adaptation support accuracy: '
-                    f'{accuracy_pre_adapt_support:.3f}, '
-                    f'post-adaptation support accuracy: '
-                    f'{accuracy_post_adapt_support:.3f}, '
-                    f'post-adaptation query accuracy: '
-                    f'{accuracy_post_adapt_query:.3f}, '
-                    f'avg5_post-adaptation query accuracy: '
-                    f'{avg5_accuracy_post_adapt_query:.3f}'
+                    f'loss: {results["NLL"]:.3f}, '
+                    f'accuracy: '
+                    f'{results["Acc"]:.3f}, '
+                    f'f1_score: '
+                    f'{results["F1 Score"]:.3f}'
                 )
-                writer.add_scalar('loss/val', loss, i_step)
+                writer.add_scalar('val/loss', results["NLL"], i_step)
                 writer.add_scalar(
-                    'val_accuracy/pre_adapt_support',
-                    accuracy_pre_adapt_support,
+                    'val/acc',
+                    results["Acc"],
                     i_step
                 )
                 writer.add_scalar(
-                    'val_accuracy/post_adapt_support',
-                    accuracy_post_adapt_support,
-                    i_step
-                )
-                writer.add_scalar(
-                    'val_accuracy/post_adapt_query',
-                    accuracy_post_adapt_query,
-                    i_step
-                )
-                writer.add_scalar(
-                    'avg5_val_accuracy/post_adapt_query',
-                    avg5_accuracy_post_adapt_query,
+                    'val/f1',
+                    results["F1 Score"],
                     i_step
                 )
 
@@ -387,7 +344,7 @@ def main(args):
             f'num_augs={args.num_augs}'
         )
         if args.dataset == "affectnet":
-            dataloader_train = omniglot.get_omniglot_dataloader(
+            dataloader_train = affectnet_meta_util.get_affectnet_dataloader(
                 'train',
                 args.batch_size,
                 args.num_way,
@@ -447,41 +404,42 @@ def main(args):
             writer
         )
     else:
-        print(
-            f'Testing on tasks with composition '
-            f'num_way={args.num_way}, '
-            f'num_support={args.num_support}, '
-            f'num_query={args.num_query}'
-        )
-        if args.dataset == 'omniglot':
-            dataloader_test = omniglot.get_omniglot_dataloader(
-                'test',
-                1,
-                args.num_way,
-                args.num_support,
-                args.num_query,
-                NUM_TEST_TASKS
-            )
-        elif args.dataset == 'imagenet':
-            dataloader_test = imagenet.get_imagenet_dataloader(
-                'test',
-                1,
-                args.num_way,
-                args.num_support,
-                args.num_query,
-                NUM_TEST_TASKS,
-                args.dataset_shuffle_seed
-            )
-        elif args.dataset == "cifar":
-            dataloader_test = cifar.get_cifar_dataloader(
-                'test',
-                1,
-                args.num_way,
-                args.num_support,
-                args.num_query,
-                NUM_TEST_TASKS
-            )
-        maml.test(dataloader_test, args)
+        raise NotImplementedError("Test Code Not Implemented Yet")
+        # print(
+        #     f'Testing on tasks with composition '
+        #     f'num_way={args.num_way}, '
+        #     f'num_support={args.num_support}, '
+        #     f'num_query={args.num_query}'
+        # )
+        # if args.dataset == 'omniglot':
+        #     dataloader_test = omniglot.get_omniglot_dataloader(
+        #         'test',
+        #         1,
+        #         args.num_way,
+        #         args.num_support,
+        #         args.num_query,
+        #         NUM_TEST_TASKS
+        #     )
+        # elif args.dataset == 'imagenet':
+        #     dataloader_test = imagenet.get_imagenet_dataloader(
+        #         'test',
+        #         1,
+        #         args.num_way,
+        #         args.num_support,
+        #         args.num_query,
+        #         NUM_TEST_TASKS,
+        #         args.dataset_shuffle_seed
+        #     )
+        # elif args.dataset == "cifar":
+        #     dataloader_test = cifar.get_cifar_dataloader(
+        #         'test',
+        #         1,
+        #         args.num_way,
+        #         args.num_support,
+        #         args.num_query,
+        #         NUM_TEST_TASKS
+        #     )
+        # maml.test(dataloader_test, args)
 
 
 if __name__ == '__main__':
@@ -496,7 +454,7 @@ if __name__ == '__main__':
                         help='number of query examples per class in a task')
     parser.add_argument('--num_inner_steps', type=int, default=1,
                         help='number of inner-loop updates')
-    parser.add_argument("--dataset", type = str, default="omniglot",
+    parser.add_argument("--dataset", type = str, default="affectnet",
                         choices = ['omniglot', 'imagenet', 'cifar'])
     parser.add_argument('--pretrain', type=bool, default=False,
                         help='whether to use pretrain model as inner loop')  
