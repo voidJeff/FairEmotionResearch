@@ -18,10 +18,10 @@ import matplotlib
 
 import affectnet_meta_util
 
-import util
 import sys
 import random
 import pdb
+from json import dumps
 
 NUM_HIDDEN_CHANNELS = 64
 KERNEL_SIZE = 3
@@ -41,10 +41,8 @@ class MAML:
 
     def __init__(
             self,
-            torch_dset,
             num_input_channels,
             num_outputs,
-            inner_lr,
             outer_lr,
             l2_wd,
             log_dir
@@ -78,7 +76,7 @@ class MAML:
 
         self._model_ft= resnet50(pretrained = ResNet50_Weights)
         num_ftrs = self._model_ft.fc.in_features
-        self._model_ft.fc = nn.Linear(num_ftrs, self.num_outputs)
+        self._model_ft.fc = nn.Linear(num_ftrs, self._num_outputs)
         
         self._model_ft = self._model_ft.to(DEVICE)
 
@@ -112,60 +110,34 @@ class MAML:
         loss_batch = []
         accuracy_batch = []
         for task in task_batch:
-            images_full, labels_full = task
-            images_full = images_full.to(DEVICE)
-            labels_full = labels_full.to(DEVICE)
+          images_full, labels_full = task
+          images_full = images_full.to(DEVICE)
+          labels_full = labels_full.to(DEVICE)
 
-            batch_size = images_full.shape[0] // 7
+          batch_size = images_full.shape[0] // 7
 
-            task_loss = []
-            task_acc = []
-            for idx, image_batch, label_batch in enumerate(zip(torch.split(images_full, batch_size, dim = 0), torch.split(labels_full, batch_size))):
-                logits = self._model_ft(image_batch)
-                loss = F.cross_entropy(logits, label_batch, weight=train_weights[idx], reduction= 'mean')
+          task_loss = []
+          task_acc = []
+          for idx, (image_batch, label_batch) in enumerate(zip(torch.split(images_full, batch_size, dim = 0), torch.split(labels_full, batch_size))):
+              logits = self._model_ft(image_batch)
+              loss = F.cross_entropy(logits, label_batch, weight=train_weights[idx], reduction= 'mean')
+              
+              # backprop the loss
+              loss.backward()
+              _, _, acc = affectnet_meta_util.acc_score(logits, label_batch)
 
-                # backprop the loss
-                loss.backward()
-                _, _, acc = affectnet_meta_util.acc_score(logits, label_batch)
+              # append accs
+              task_loss.append(loss.item())
+              task_acc.append(acc)
 
-                # append accs
-                task_loss.append(loss.item())
-                task_acc.append(acc)
+          loss_batch.append(np.mean(task_loss))
+          accuracy_batch.append(np.mean(task_acc))
 
-            loss_batch.append(task_loss)
-            accuracy_batch.append(np.mean(task_acc))
-            # # use higher
-            # inner_opt = torch.optim.SGD(self._inner_net.parameters(), lr=1e-1)
-
-            # with higher.innerloop_ctx(
-            #     self._inner_net, inner_opt, copy_initial_weights= not train, track_higher_grads = train,
-            # ) as (fnet, diffopt):
-            #     # adapt in inner loop
-            #     support_accs = []
-            #     for _ in range(self._num_inner_steps):
-            #         spt_logits = fnet(support_augs)
-            #         spt_loss = F.cross_entropy(spt_logits, labels_augs)
-
-            #         support_accs.append(util.score(spt_logits, labels_augs))
-            #         diffopt.step(spt_loss)
-
-            #     spt_logits = fnet(support_augs)
-            #     support_accs.append(util.score(spt_logits, labels_augs))
-            #     accuracies_support_batch.append(support_accs)
-
-            #     qry_logits = fnet(images_query)
-            #     qry_loss = F.cross_entropy(qry_logits, labels_query)
-            #     accuracy_query_batch.append(util.score(qry_logits, labels_query))
-
-            #     if train:
-            #         qry_loss.backward()
-            #     outer_loss_batch.append(qry_loss.detach())              
-
-        loss_full = torch.mean(torch.stack(loss_batch))
+        loss_full = np.mean(loss_batch)
         acc_full = np.mean(accuracy_batch)
         return loss_full, acc_full
 
-    def train(self, dataloader_train, dataloader_val, writer):
+    def train(self, dataloader_train, dataloader_val, writer, log):
         """Train the MAML.
 
         Consumes dataloader_train to optimize MAML meta-parameters
@@ -300,7 +272,7 @@ def main(args):
     # if args.test : 
     #     wandb_name = "eval_" + wandb_name
     # wandb.init(project="test-project", entity="fairemotion", config=args, name=wandb_name, sync_tensorboard=True)
-    # writer = tensorboard.SummaryWriter(log_dir=log_dir)
+    writer = tensorboard.SummaryWriter(log_dir=log_dir)
 
     log = affectnet_meta_util.get_logger(log_dir, "logger_name")
     # dump the args info
@@ -308,22 +280,11 @@ def main(args):
 
     num_input_channels = 3
     maml = MAML(
-        num_input_channels,
-        args.num_way,
-        args.num_inner_steps,
-        args.pretrain,
-        args.aug_net_size,
-        args.num_augs,
-        args.aug_noise_prob,
-        args.train_aug_type,
-        args.inner_lr,
-        args.learn_inner_lrs,
-        args.outer_lr,
-        args.l2_wd,
-        log_dir,
-        args.debug,
-        args.dataset,
-        args.identity_init_off
+      num_input_channels= num_input_channels,
+      num_outputs = 7,
+      outer_lr = args.outer_lr,
+      l2_wd = args.l2_wd,
+      log_dir = log_dir
     )
 
     if args.checkpoint_step > -1:
@@ -339,28 +300,19 @@ def main(args):
         
         log.info("Building dataset....")
         if args.dataset == "affectnet":
-            dataloader_train = affectnet_meta_util.get_affectnet_dataloader(
-                data_csv,
-                split,
-                batch_size,
-                task_batch_size,
-                data_csv,
-                num_its_per_epoch
-
-                'train',
-                args.batch_size,
-                args.num_way,
-                args.num_support,
-                args.num_query,
-                num_training_tasks
+            dataloader_train = affectnet_meta_util.get_affectnet_meta_dataloader(
+                data_csv = args.train_csv,
+                split = 'train',
+                batch_size = args.batch_size,
+                task_batch_size = args.task_batch_size,
+                num_its_per_epoch = num_training_tasks
             )
-            dataloader_val = affectnet_meta_util.get_affectnet_dataloader(
-                'val',
-                args.batch_size,
-                args.num_way,
-                args.num_support,
-                args.num_query,
-                args.batch_size * 4
+            dataloader_val = affectnet_meta_util.get_affectnet_meta_dataloader(
+                data_csv = args.val_csv,
+                split = 'val',
+                batch_size = args.batch_size,
+                task_batch_size = None,
+                num_its_per_epoch = None
             )
         else:
             raise Exception("Invalid Dataset")
@@ -369,7 +321,8 @@ def main(args):
         maml.train(
             dataloader_train,
             dataloader_val,
-            writer
+            writer,
+            log
         )
     else:
         raise NotImplementedError("Test Code Not Implemented Yet")
@@ -416,11 +369,13 @@ if __name__ == '__main__':
                         help='directory to save to or load from')
     parser.add_argument('--num_inner_steps', type=int, default=1,
                         help='number of inner-loop updates')
+    parser.add_argument("--train_csv", type = str, default="./affectnet_train_filepath_full.csv")
+    parser.add_argument("--val_csv", type = str, default="./affectnet_val_filepath_full.csv")
     parser.add_argument("--dataset", type = str, default="affectnet",
                         choices = ['affectnet'])
     parser.add_argument('--learn_inner_lrs', default=False, action='store_true',
                         help='whether to optimize inner-loop learning rates')
-    parser.add_argument('--outer_lr', type=float, default=0.001,
+    parser.add_argument('--outer_lr', type=float, default=0.0001,
                         help='outer-loop learning rate')
     parser.add_argument('--l2_wd', type=float, default=1e-4,
                         help='l2 weight decay for outer loop')            
