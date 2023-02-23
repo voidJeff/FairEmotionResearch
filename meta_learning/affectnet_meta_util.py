@@ -240,7 +240,7 @@ def get_affectnet_meta_dataloader(
             dataset=AffectNetMetaDataset(batch_size, data_csv),
             batch_size=task_batch_size,
             sampler=AffectnetRaceSampler(num_its_per_epoch),
-            num_workers=2,
+            num_workers=8,
             collate_fn=identity,
             pin_memory=torch.cuda.is_available(),
             drop_last=True
@@ -250,7 +250,7 @@ def get_affectnet_meta_dataloader(
         return dataloader.DataLoader(dev_dataset,
                                 batch_size=batch_size,
                                 shuffle=False,
-                                num_workers=2)
+                                num_workers=8)
 
 
 def acc_score(logits, labels):
