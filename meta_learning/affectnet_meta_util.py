@@ -2,6 +2,7 @@
 import os
 import glob
 import gzip
+import logging
 
 import imageio
 import numpy as np
@@ -150,50 +151,27 @@ class AffectnetRaceSampler(sampler.Sampler):
 def identity(x):
     return x
 
-class AffectNetDataset(data.Dataset):
+class AffectNetCSVDataset(data.Dataset):
     """
     Preprocess and prepare data for feeding into NN
     """
     def __init__(
         self,
-        data_dir,
+        data_csv,
         train,
         balance = None
     ):
 
         # make a two col pandas df of image number : label
-        self.data_dir = data_dir
+        self.data = pd.read_csv(data_csv)
         self.train = train
-        annotations = glob.glob(os.path.join(data_dir, "annotations", "*_exp.npy"))
 
-        image_nums = []
-        labels = []
-        for annotation in annotations:
-            image_num = re.findall(r'(\d+)', str(annotation))[0]
-            label = np.load(annotation).item()
-
-            if label == '7':
-                continue
-
-            image_nums.append(image_num)
-            labels.append(label)
-        
-        self.data = pd.DataFrame({"image_num": image_nums, "label": labels})
-        self.data.label = self.data.label.astype(int)
-
-        if balance: # !ignore for now, not downsampling
-        
-
-            # downsample here
-            g = data.groupby(label, group_keys=False)
-            self.data = pd.DataFrame(g.apply(lambda x: x.sample(g.size().min()))).reset_index(drop=True)
-
-        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(labels), y= np.array(labels)) #? should we drop the .cpu() here?
+        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(self.data.label), y= np.array(self.data.label)) #? should we drop the .cpu() here?
 
     def __getitem__(self, index):
 
         # use the df to read in image for the given index
-        image_path = os.path.join(self.data_dir, "images", self.data.loc[index, "image_num"] + ".jpg")
+        image_path = self.data.loc[index, "img_path"]
 
         image = Image.open(image_path).convert("RGB")
 
@@ -237,11 +215,12 @@ class AffectNetDataset(data.Dataset):
         return len(self.data)
 
 def get_affectnet_meta_dataloader(
-        split,
-        batch_size,
-        task_batch_size,
-        data_csv,
-        num_its_per_epoch
+    data_csv,
+    split,
+    batch_size,
+    task_batch_size,
+    data_csv,
+    num_its_per_epoch
 ):
     """Returns a dataloader.DataLoader for affectnet meta.
 
@@ -266,7 +245,7 @@ def get_affectnet_meta_dataloader(
             drop_last=True
         )
     elif split == "val":
-        dev_dataset = AffectNetDataset('../data/affectnet/val_set', train = False, balance = False)
+        dev_dataset = AffectNetDataset(data_csv, train = False, balance = False)
         return dataloader.DataLoader(dev_dataset,
                                 batch_size=batch_size,
                                 shuffle=False,
@@ -372,3 +351,54 @@ def evaluate(model, data_loader, device):
                     ("F1 Score", f1)]
     results = OrderedDict(results_list)
     return results, pred_dict
+
+def get_logger(log_dir, name):
+    """Get a `logging.Logger` instance that prints to the console
+    and an auxiliary file.
+    Args:
+        log_dir (str): Directory in which to create the log file.
+        name (str): Name to identify the logs.
+    Returns:
+        logger (logging.Logger): Logger instance for logging events.
+    """
+    class StreamHandlerWithTQDM(logging.Handler):
+        """Let `logging` print without breaking `tqdm` progress bars.
+        See Also:
+            > https://stackoverflow.com/questions/38543506
+        """
+        def emit(self, record):
+            try:
+                msg = self.format(record)
+                tqdm.tqdm.write(msg)
+                self.flush()
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except:
+                self.handleError(record)
+
+    # Create logger
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+
+    # Log everything (i.e., DEBUG level and above) to a file
+    log_path = os.path.join(log_dir, 'log.txt')
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setLevel(logging.DEBUG)
+
+    # Log everything except DEBUG level (i.e., INFO level and above) to console
+    console_handler = StreamHandlerWithTQDM()
+    console_handler.setLevel(logging.INFO)
+
+    # Create format for the logs
+    file_formatter = logging.Formatter('[%(asctime)s] %(message)s',
+                                       datefmt='%m.%d.%y %H:%M:%S')
+    file_handler.setFormatter(file_formatter)
+    console_formatter = logging.Formatter('[%(asctime)s] %(message)s',
+                                          datefmt='%m.%d.%y %H:%M:%S')
+    console_handler.setFormatter(console_formatter)
+
+    # add the handlers to the logger
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    return logger

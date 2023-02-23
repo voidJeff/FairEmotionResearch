@@ -205,16 +205,13 @@ class MAML:
                 )
 
             if i_step % VAL_INTERVAL == 0:
+
+                log.info(f'Evaluating at step {i_step}...')
                 results, pred_dict = affectnet_meta_util.evaluate(self._model_ft, dataloader_val, DEVICE)
                 
-                print(
-                    f'Validation: '
-                    f'loss: {results["NLL"]:.3f}, '
-                    f'accuracy: '
-                    f'{results["Acc"]:.3f}, '
-                    f'f1_score: '
-                    f'{results["F1 Score"]:.3f}'
-                )
+                results_str = ", ".join(f'{k}: {v:05.2f}' for k, v in results.items())
+                log.info(f'Dev {results_str}')
+
                 writer.add_scalar('val/loss', results["NLL"], i_step)
                 writer.add_scalar(
                     'val/acc',
@@ -269,8 +266,7 @@ class MAML:
         )
         if os.path.isfile(target_path):
             state = torch.load(target_path)
-            self._aug_net.load_state_dict(state['aug_net'])
-            self._inner_net.load_state_dict(state['inner_net'])
+            self._model_ft.load_state_dict(state['model_state_dict'])
             self._optimizer.load_state_dict(state['optimizer_state_dict'])
             self._start_train_step = checkpoint_step + 1
             print(f'Loaded checkpoint iteration {checkpoint_step}.')
@@ -287,8 +283,7 @@ class MAML:
         """
         optimizer_state_dict = self._optimizer.state_dict()
         torch.save(
-            dict(aug_net = self._aug_net.state_dict(),
-                inner_net = self._inner_net.state_dict(),
+            dict(model_state_dict = self._model_ft.state_dict(),
                 optimizer_state_dict=optimizer_state_dict),
             f'{os.path.join(self._log_dir, "state")}{checkpoint_step}.pt'
         )
@@ -299,14 +294,17 @@ def main(args):
     # Initialize logging (Tensorboard and Wandb)
     log_dir = args.log_dir
     if log_dir is None:
-        log_dir = f'./logs/final_experiments/{args.dataset}.train_aug_type:{args.train_aug_type}.aug_net_size:{args.aug_net_size}.num_augs{args.num_augs}.aug_noise_prob{args.aug_noise_prob}.identity_init_off{args.identity_init_off}.dset_shuffle{args.dataset_shuffle_seed}.l2_wd{args.l2_wd}.way:{args.num_way}.support:{args.num_support}.query:{args.num_query}.inner_steps:{args.num_inner_steps}.inner_lr:{args.inner_lr}.learn_inner_lrs:{args.learn_inner_lrs}.outer_lr:{args.outer_lr}.batch_size:{args.batch_size}' # pylint: disable=line-too-long
+        log_dir = f'./save/meta.batch_size:{args.batch_size}.task_batch_size:{args.task_batch_size}' # pylint: disable=line-too-long
     print(f'log_dir: {log_dir}')
-    wandb_name = log_dir.split('/')[-1]
-    if args.test : 
-        wandb_name = "eval_" + wandb_name
-    wandb.init(project="test-project", entity="cs330_team", config=args, name=wandb_name, sync_tensorboard=True)
-    writer = tensorboard.SummaryWriter(log_dir=log_dir)
+    # wandb_name = log_dir.split('/')[-1]
+    # if args.test : 
+    #     wandb_name = "eval_" + wandb_name
+    # wandb.init(project="test-project", entity="fairemotion", config=args, name=wandb_name, sync_tensorboard=True)
+    # writer = tensorboard.SummaryWriter(log_dir=log_dir)
 
+    log = affectnet_meta_util.get_logger(log_dir, "logger_name")
+    # dump the args info
+    log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
 
     num_input_channels = 3
     maml = MAML(
@@ -329,22 +327,26 @@ def main(args):
     )
 
     if args.checkpoint_step > -1:
+        log.info(f'Loading checkpoint from {args.checkpoint_step}...')
         maml.load(args.checkpoint_step)
     else:
         print('Checkpoint loading skipped.')
 
     if not args.test:
-        num_training_tasks = args.batch_size * (args.num_train_iterations -
-                                                args.checkpoint_step - 1)
-        print(
-            f'Training on {num_training_tasks} tasks with composition: '
-            f'num_way={args.num_way}, '
-            f'num_support={args.num_support}, '
-            f'num_query={args.num_query}, '
-            f'num_augs={args.num_augs}'
-        )
+        num_training_tasks = args.num_train_iterations
+        log.info(f'Training for {num_training_tasks} tasks with composition: ')
+            
+        
+        log.info("Building dataset....")
         if args.dataset == "affectnet":
             dataloader_train = affectnet_meta_util.get_affectnet_dataloader(
+                data_csv,
+                split,
+                batch_size,
+                task_batch_size,
+                data_csv,
+                num_its_per_epoch
+
                 'train',
                 args.batch_size,
                 args.num_way,
@@ -352,43 +354,7 @@ def main(args):
                 args.num_query,
                 num_training_tasks
             )
-            dataloader_val = omniglot.get_omniglot_dataloader(
-                'val',
-                args.batch_size,
-                args.num_way,
-                args.num_support,
-                args.num_query,
-                args.batch_size * 4
-            )
-        elif args.dataset == "imagenet":
-            dataloader_train = imagenet.get_imagenet_dataloader(
-                'train',
-                args.batch_size,
-                args.num_way,
-                args.num_support,
-                args.num_query,
-                num_training_tasks,
-                args.dataset_shuffle_seed
-            )
-            dataloader_val = imagenet.get_imagenet_dataloader(
-                'val',
-                args.batch_size,
-                args.num_way,
-                args.num_support,
-                args.num_query,
-                args.batch_size * 4,
-                args.dataset_shuffle_seed
-            )
-        elif args.dataset == "cifar":
-            dataloader_train = cifar.get_cifar_dataloader(
-                'train',
-                args.batch_size,
-                args.num_way,
-                args.num_support,
-                args.num_query,
-                num_training_tasks
-            )
-            dataloader_val = cifar.get_cifar_dataloader(
+            dataloader_val = affectnet_meta_util.get_affectnet_dataloader(
                 'val',
                 args.batch_size,
                 args.num_way,
@@ -398,6 +364,8 @@ def main(args):
             )
         else:
             raise Exception("Invalid Dataset")
+
+        log.info("Training...")
         maml.train(
             dataloader_train,
             dataloader_val,
@@ -446,26 +414,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser('Train a MAML!')
     parser.add_argument('--log_dir', type=str, default=None,
                         help='directory to save to or load from')
-    parser.add_argument('--num_way', type=int, default=5,
-                        help='number of classes in a task')
-    parser.add_argument('--num_support', type=int, default=1,
-                        help='number of support examples per class in a task')
-    parser.add_argument('--num_query', type=int, default=15,
-                        help='number of query examples per class in a task')
     parser.add_argument('--num_inner_steps', type=int, default=1,
                         help='number of inner-loop updates')
     parser.add_argument("--dataset", type = str, default="affectnet",
-                        choices = ['omniglot', 'imagenet', 'cifar'])
-    parser.add_argument('--pretrain', type=bool, default=False,
-                        help='whether to use pretrain model as inner loop')  
-    parser.add_argument('--aug_net_size', type=int, default=1,
-                        help='how many conv layers in augmentation network')       
-    parser.add_argument('--num_augs', type=int, default=1,
-                        help='how many sets of augmentations')
-    parser.add_argument('--aug_noise_prob', type=float, default=0.1,
-                        help='likelihood to inject noise in augmentation layer')                          
-    parser.add_argument('--inner_lr', type=float, default=0.4,
-                        help='inner-loop learning rate initialization')
+                        choices = ['affectnet'])
     parser.add_argument('--learn_inner_lrs', default=False, action='store_true',
                         help='whether to optimize inner-loop learning rates')
     parser.add_argument('--outer_lr', type=float, default=0.001,
@@ -473,6 +425,8 @@ if __name__ == '__main__':
     parser.add_argument('--l2_wd', type=float, default=1e-4,
                         help='l2 weight decay for outer loop')            
     parser.add_argument('--batch_size', type=int, default=16,
+                        help='number of images per task')
+    parser.add_argument('--task_batch_size', type=int, default=4,
                         help='number of tasks per outer-loop update')
     parser.add_argument('--num_train_iterations', type=int, default=15000,
                         help='number of outer-loop updates to train for')
@@ -483,12 +437,6 @@ if __name__ == '__main__':
                               'training, or for evaluation (-1 is ignored)'))
     parser.add_argument('--debug', default=False, action = 'store_true',
                         help='debug by reducing to base maml')  
-    parser.add_argument('--train_aug_type', default="learned",
-                        help='specity augmentation type for training')  
-    parser.add_argument('--identity_init_off', default=False, action='store_true',
-                        help='True for MetaAugNet identity initialization, false for default init')  
-    parser.add_argument('--dataset_shuffle_seed', type=int, default=0,
-                        help='seed for shuffling dataset')
     main_args = parser.parse_args()
     main(main_args)
 
