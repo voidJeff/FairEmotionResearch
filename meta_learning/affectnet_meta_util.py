@@ -178,7 +178,7 @@ class AffectNetCSVDataset(dataset.Dataset):
         image = Image.open(image_path).convert("RGB")
 
         if self.train:
-            std_image = transforms.Compose(
+            std_image = Compose(
             [
                 ColorJitter(brightness=0.5, hue = 0.3),
                 RandomHorizontalFlip(),
@@ -190,7 +190,7 @@ class AffectNetCSVDataset(dataset.Dataset):
             ]
         )
         else:
-            std_image = transforms.Compose(
+            std_image = Compose(
                 [
                     ToTensor(),
                     Normalize(                    
@@ -311,8 +311,7 @@ def evaluate(model, data_loader, device):
     acc = 0
     num_corrects, num_samples = 0, 0
 
-    with torch.no_grad(), \
-        tqdm(total=len(data_loader.dataset)) as progress_bar:
+    with torch.no_grad():
         for img_id, x, y in data_loader:
             # forward pass here
             x = x.float().to(device)
