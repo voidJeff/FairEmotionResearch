@@ -12,7 +12,6 @@ from torch import autograd
 from torch.utils import tensorboard
 from torchvision.models import resnet50, ResNet50_Weights
 import torchvision.transforms as transforms
-import higher
 import wandb
 import matplotlib
 
@@ -268,10 +267,10 @@ def main(args):
     if log_dir is None:
         log_dir = f'./save/meta.batch_size:{args.batch_size}.task_batch_size:{args.task_batch_size}' # pylint: disable=line-too-long
     print(f'log_dir: {log_dir}')
-    # wandb_name = log_dir.split('/')[-1]
-    # if args.test : 
-    #     wandb_name = "eval_" + wandb_name
-    # wandb.init(project="test-project", entity="fairemotion", config=args, name=wandb_name, sync_tensorboard=True)
+    wandb_name = log_dir.split('/')[-1]
+    if args.test : 
+        wandb_name = "eval_" + wandb_name
+    wandb.init(project="test-project", entity="fairemotion", config=args, name=wandb_name, sync_tensorboard=True)
     writer = tensorboard.SummaryWriter(log_dir=log_dir)
 
     log = affectnet_meta_util.get_logger(log_dir, "logger_name")
