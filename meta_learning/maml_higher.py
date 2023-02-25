@@ -116,7 +116,7 @@ class MAML:
           logits = self._model_ft(images_full)
           loss = F.cross_entropy(logits, labels_full, weight=train_weights, reduction = 'mean')
           loss.backward()
-          _, _, acc = affectnet_meta_util.acc_score(logits, label_batch)
+          _, _, acc = affectnet_meta_util.acc_score(logits, labels_full)
 
           loss_batch.append(loss.item())
           accuracy_batch.append(acc)
