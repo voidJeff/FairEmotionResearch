@@ -113,24 +113,32 @@ class MAML:
           images_full = images_full.to(DEVICE)
           labels_full = labels_full.to(DEVICE)
 
-          batch_size = images_full.shape[0] // 7
+          logits = self._model_fit(images_full)
+          loss = F.cross_entropy(logits, labels_full, weight=train_weights, reduction = 'mean')
+          loss.backward()
+          _, _, acc = affectnet_meta_util.acc_score(logits, label_batch)
 
-          task_loss = []
-          task_acc = []
-          for idx, (image_batch, label_batch) in enumerate(zip(torch.split(images_full, batch_size, dim = 0), torch.split(labels_full, batch_size))):
-              logits = self._model_ft(image_batch)
-              loss = F.cross_entropy(logits, label_batch, weight=train_weights[idx], reduction= 'mean')
+          loss_batch.append(loss.item())
+          accuracy_batch.append(acc)
+
+        #   batch_size = images_full.shape[0] // 7
+
+        #   task_loss = []
+        #   task_acc = []
+        #   for idx, (image_batch, label_batch) in enumerate(zip(torch.split(images_full, batch_size, dim = 0), torch.split(labels_full, batch_size))):
+        #       logits = self._model_ft(image_batch)
+        #       loss = F.cross_entropy(logits, label_batch, weight=train_weights[idx], reduction= 'mean')
               
-              # backprop the loss
-              loss.backward()
-              _, _, acc = affectnet_meta_util.acc_score(logits, label_batch)
+        #       # backprop the loss
+        #       loss.backward()
+        #       _, _, acc = affectnet_meta_util.acc_score(logits, label_batch)
 
-              # append accs
-              task_loss.append(loss.item())
-              task_acc.append(acc)
+        #       # append accs
+        #       task_loss.append(loss.item())
+        #       task_acc.append(acc)
 
-          loss_batch.append(np.mean(task_loss))
-          accuracy_batch.append(np.mean(task_acc))
+        #   loss_batch.append(np.mean(task_loss))
+        #   accuracy_batch.append(np.mean(task_acc))
 
         loss_full = np.mean(loss_batch)
         acc_full = np.mean(accuracy_batch)
@@ -156,7 +164,7 @@ class MAML:
         ):
             self._optimizer.zero_grad()
             outer_loss, accuracy_query = (
-                self._outer_step(task_batch, train_weights = dataloader_train.dataset.weight_dict, train=True, step=i_step)
+                self._outer_step(task_batch, train_weights = dataloader_train.dataset.total_weight, train=True, step=i_step)
             )
 
             self._optimizer.step()
@@ -168,9 +176,9 @@ class MAML:
                     f'accuracy: '
                     f'{accuracy_query:.3f}'
                 )
-                writer.add_scalar('loss/train', outer_loss.item(), i_step)
+                writer.add_scalar('train/loss', outer_loss.item(), i_step)
                 writer.add_scalar(
-                    'train_accuracy/post_adapt_query',
+                    'train/accuracy',
                     accuracy_query,
                     i_step
                 )

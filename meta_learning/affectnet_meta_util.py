@@ -84,6 +84,7 @@ class AffectNetMetaDataset(dataset.Dataset):
         for idx, race in self._task_idx.items():
             temp_filter = self._data.loc[self._data['race'] == race, :]
             self.weight_dict[idx] = torch.tensor(compute_class_weight(class_weight='balanced', classes= np.unique(temp_filter.label), y= np.array(temp_filter.label)), dtype=torch.float).to(DEVICE) #? should we drop the .cpu() here?
+        self.total_weight = torch.tensor(compute_class_weight(class_weight='balanced', classes= np.unique(self._data.label), y= np.array(self._data.label)), dtype=torch.float).to(DEVICE)
 
     def __getitem__(self, class_idxs):
         """Constructs a task.
