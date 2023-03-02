@@ -109,12 +109,13 @@ class AffectNetMetaDataset(dataset.Dataset):
         for class_idx in class_idxs:
             # get a class's examples and sample from them
             sampled_file_paths = np.random.default_rng().choice(
-                self._data.loc[self._data['race'] == self._task_idx[class_idx], :].img_path,
+                self._data.loc[self._data['race'] == self._task_idx[class_idx], :],
                 size=self._batch_size,
                 replace=False
             )
-            images = [load_image(file_path) for file_path in sampled_file_paths]
-            label = self._data.loc[self._data.img_path.isin(sampled_file_paths),"label"].tolist()
+            sample = pd.DataFrame(sampled_file_paths, columns = self._data.columns)
+            images = [load_image(file_path) for file_path in sample.img_path]
+            label = sample.label.tolist()
             # split sampled examples into support and query
             images_full.extend(images)
             labels_full.extend(label)
