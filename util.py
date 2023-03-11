@@ -111,7 +111,7 @@ class AffectNetDataset(data.Dataset):
 
         return len(self.data)
 
-class AffectNetCSVDataset(dataset.Dataset):
+class AffectNetCSVDataset(data.Dataset):
     """
     Preprocess and prepare data for feeding into NN
     """
