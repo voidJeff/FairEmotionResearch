@@ -136,22 +136,22 @@ class AffectNetCSVDataset(data.Dataset):
         image = Image.open(image_path).convert("RGB")
 
         if self.train:
-            std_image = Compose(
+            std_image = transforms.Compose(
             [
-                ColorJitter(brightness=0.5, hue = 0.3),
-                RandomHorizontalFlip(),
-                ToTensor(),
-                Normalize(
+                transforms.ColorJitter(brightness=0.5, hue = 0.3),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(
                     mean=(0.485, 0.456, 0.406), 
                     std=(0.229, 0.224, 0.225)
                 )
             ]
         )
         else:
-            std_image = Compose(
+            std_image = transforms.Compose(
                 [
-                    ToTensor(),
-                    Normalize(                    
+                    transforms.ToTensor(),
+                    transforms.Normalize(                    
                     mean=(0.485, 0.456, 0.406), 
                     std=(0.229, 0.224, 0.225)
                     )
