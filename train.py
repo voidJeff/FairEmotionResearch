@@ -15,7 +15,7 @@ import util
 
 from args import get_train_args
 from models import baseline_pretrain
-from util import AffectNetDataset, CAFEDataset
+from util import AffectNetDataset, AffectNetCSVDataset, CAFEDataset
 from collections import OrderedDict
 from sklearn import metrics
 from tensorboardX import SummaryWriter
@@ -105,6 +105,17 @@ def main(args):
                                     shuffle=True,
                                     num_workers=args.num_workers)
         dev_dataset = CAFEDataset(args.cafe_val_csv, train = False, balance = False)
+        dev_loader = data.DataLoader(dev_dataset,
+                                    batch_size=args.batch_size,
+                                    shuffle=False,
+                                    num_workers=args.num_workers)
+    elif(args.dataset == "affectnet_base_minor_aug"):
+        train_dataset = AffectNetCSVDataset(args.train_csv, train = False, balance = False)
+        train_loader = data.DataLoader(train_dataset,
+                                    batch_size=args.batch_size,
+                                    shuffle=True,
+                                    num_workers=args.num_workers)
+        dev_dataset = AffectNetCSVDataset(args.val_csv, train = False, balance = False)
         dev_loader = data.DataLoader(dev_dataset,
                                     batch_size=args.batch_size,
                                     shuffle=False,

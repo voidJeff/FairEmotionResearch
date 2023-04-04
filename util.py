@@ -111,6 +111,69 @@ class AffectNetDataset(data.Dataset):
 
         return len(self.data)
 
+class AffectNetCSVDataset(data.Dataset):
+    """
+    Preprocess and prepare data for feeding into NN
+    """
+    def __init__(
+        self,
+        data_csv,
+        train,
+        balance = None
+    ):
+
+        # make a two col pandas df of image number : label
+        self.data = pd.read_csv(data_csv)
+        self.train = train
+
+        self.label_weights = compute_class_weight(class_weight='balanced', classes= np.unique(self.data.label), y= np.array(self.data.label)) #? should we drop the .cpu() here?
+
+    def __getitem__(self, index):
+
+        # use the df to read in image for the given index
+        image_path = self.data.loc[index, "img_path"]
+
+        image = Image.open(image_path).convert("RGB")
+
+        if self.train:
+            std_image = transforms.Compose(
+            [
+                transforms.ColorJitter(brightness=0.5, hue = 0.3),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=(0.485, 0.456, 0.406), 
+                    std=(0.229, 0.224, 0.225)
+                )
+            ]
+        )
+        else:
+            std_image = transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Normalize(                    
+                    mean=(0.485, 0.456, 0.406), 
+                    std=(0.229, 0.224, 0.225)
+                    )
+                ]
+            )
+        image = std_image(image)
+        assert(image.shape == (3, 224, 224))
+
+        label = self.data.loc[index, "label"]
+        image_num = self.data.loc[index, 'image_num']
+        example = (
+            image_num,
+            image,
+            label
+        )
+
+        return example
+
+    def __len__(self):
+
+        return len(self.data)
+
 class CAFEDataset(data.Dataset):
     """
     Preprocess and prepare data for feeding into NN
